@@ -10,13 +10,13 @@ See  ```Executors``` in the java package ```java.util.concurrent```
 ```xml
 <dependency>
     <groupId>top.focess</groupId>
-    <artifactId>focess-util</artifactId>
-    <version>1.0.4</version>
+    <artifactId>focess-scheduler</artifactId>
+    <version>1.0.1</version>
 </dependency>
 ```
 
 Gradle:
 
 ```gradle
-implementation 'top.focess:focess-util:1.0.4'
+implementation 'top.focess:focess-scheduler:1.0.1'
 ```

@@ -1,6 +1,8 @@
 package top.focess.scheduler;
 
 
+import org.jetbrains.annotations.Nullable;
+
 import java.time.Duration;
 import java.util.concurrent.Callable;
 
@@ -97,4 +99,12 @@ public interface Scheduler {
      * Close this scheduler even if there are tasks running
      */
     void closeNow();
+
+    void setUncaughtExceptionHandler(Thread.UncaughtExceptionHandler handler);
+
+    @Nullable Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
+
+    @Nullable CatchExceptionHandler getCatchExceptionHandler();
+
+    void setCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler);
 }

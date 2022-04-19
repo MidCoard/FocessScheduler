@@ -40,20 +40,25 @@ public abstract class AScheduler implements Scheduler {
         return Collections.unmodifiableList(SCHEDULER_LIST);
     }
 
+    @Override
     public void setUncaughtExceptionHandler(Thread.UncaughtExceptionHandler handler) {
         this.uncaughtExceptionHandler = handler;
     }
 
+    @Override
     @Nullable
     public Thread.UncaughtExceptionHandler getUncaughtExceptionHandler() {
         return this.uncaughtExceptionHandler;
     }
 
+
+    @Override
     @Nullable
     public CatchExceptionHandler getCatchExceptionHandler() {
         return catchExceptionHandler;
     }
 
+    @Override
     public void setCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler) {
         this.catchExceptionHandler = catchExceptionHandler;
     }
