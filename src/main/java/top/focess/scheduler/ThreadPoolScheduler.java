@@ -144,24 +144,20 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     @Nullable
-    @Override
-    public Thread.UncaughtExceptionHandler getUncaughtExceptionHandler() {
+    public Thread.UncaughtExceptionHandler getThreadUncaughtExceptionHandler() {
         return uncaughtExceptionHandler;
     }
 
-    @Override
-    public void setUncaughtExceptionHandler(Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
+    public void setThreadUncaughtExceptionHandler(Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
     }
 
     @Nullable
-    @Override
-    public CatchExceptionHandler getCatchExceptionHandler() {
+    public CatchExceptionHandler getThreadCatchExceptionHandler() {
         return catchExceptionHandler;
     }
 
-    @Override
-    public void setCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler) {
+    public void setThreadCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler) {
         this.catchExceptionHandler = catchExceptionHandler;
     }
 

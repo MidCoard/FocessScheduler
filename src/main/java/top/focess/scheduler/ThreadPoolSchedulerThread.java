@@ -27,9 +27,9 @@ public class ThreadPoolSchedulerThread extends Thread {
                 this.task.endRun();
                 scheduler.taskThreadMap.remove(this.task);
             }
-            if (scheduler.getUncaughtExceptionHandler() != null)
-                scheduler.getUncaughtExceptionHandler().uncaughtException(t, e);
-            scheduler.recreate(this.name);
+            if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
+                this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
+            this.scheduler.recreate(this.name);
         });
         this.start();
     }
@@ -59,8 +59,8 @@ public class ThreadPoolSchedulerThread extends Thread {
                 }
                 this.isAvailable = true;
             } catch (final Exception e) {
-                if (this.scheduler.getCatchExceptionHandler() != null)
-                    this.scheduler.getCatchExceptionHandler().catchException(this,e);
+                if (this.scheduler.getThreadCatchExceptionHandler() != null)
+                    this.scheduler.getThreadCatchExceptionHandler().catchException(this,e);
             }
         }
     }
