@@ -30,7 +30,7 @@ public class FocessTask implements ITask {
      *
      * @return all the tasks which are not gc yet
      */
-    public static Set<Task> getCallbacks() {
+    public static Set<Task> getTasks() {
         return Collections.unmodifiableSet(TASK_SET.keySet());
     }
 
