@@ -1,6 +1,7 @@
 package top.focess.scheduler;
 
 import org.jetbrains.annotations.NotNull;
+import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
 import java.util.concurrent.*;
 

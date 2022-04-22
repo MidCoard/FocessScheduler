@@ -1,6 +1,7 @@
-package top.focess.scheduler;
+package top.focess.scheduler.exceptions;
 
 import org.jetbrains.annotations.NotNull;
+import top.focess.scheduler.Task;
 
 /**
  * Thrown to indicate that the task is not found

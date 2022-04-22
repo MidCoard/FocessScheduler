@@ -4,6 +4,9 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
+import top.focess.scheduler.exceptions.SchedulerClosedException;
+import top.focess.scheduler.exceptions.TaskNotFoundError;
 
 import java.time.Duration;
 import java.util.List;
@@ -11,6 +14,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 public class ThreadPoolScheduler extends AScheduler {
 
@@ -115,6 +119,11 @@ public class ThreadPoolScheduler extends AScheduler {
         for (final ThreadPoolSchedulerThread thread : this.threads)
             thread.closeNow();
         this.notify();
+    }
+
+    @Override
+    public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
+        return this.tasks.stream().map(ComparableTask::getTask).collect(Collectors.toUnmodifiableList());
     }
 
     public void cancel(final ITask task) {

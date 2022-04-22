@@ -1,5 +1,7 @@
 package top.focess.scheduler;
 
+import top.focess.scheduler.exceptions.TaskNotFoundError;
+
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 

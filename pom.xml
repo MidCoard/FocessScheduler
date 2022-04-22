@@ -9,7 +9,7 @@
     <description>Focess Scheduler implement</description>
     <groupId>top.focess</groupId>
     <artifactId>focess-scheduler</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 
 
 
@@ -118,6 +118,8 @@
                 <version>3.1</version>
                 <configuration>
                     <encoding>UTF-8</encoding>
+                    <source>10</source>
+                    <target>10</target>
                 </configuration>
             </plugin>
             <plugin>

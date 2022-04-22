@@ -2,12 +2,16 @@ package top.focess.scheduler;
 
 import com.google.common.collect.Queues;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
+import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 public class FocessScheduler extends AScheduler {
 
@@ -84,6 +88,11 @@ public class FocessScheduler extends AScheduler {
     public synchronized void closeNow() {
         this.close();
         this.thread.stop();
+    }
+
+    @Override
+    public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
+        return this.tasks.stream().map(ComparableTask::getTask).collect(Collectors.toUnmodifiableList());
     }
 
     @Override

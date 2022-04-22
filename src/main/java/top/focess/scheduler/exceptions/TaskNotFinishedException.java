@@ -1,6 +1,7 @@
-package top.focess.scheduler;
+package top.focess.scheduler.exceptions;
 
 import org.jetbrains.annotations.NotNull;
+import top.focess.scheduler.Callback;
 
 /**
  * Thrown to indicate the task is not finished

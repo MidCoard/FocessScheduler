@@ -2,8 +2,11 @@ package top.focess.scheduler;
 
 
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
+import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 /**
@@ -100,11 +103,36 @@ public interface Scheduler {
      */
     void closeNow();
 
+    /**
+     * Set the uncaught exception handler
+     * @param handler the uncaught exception handler
+     */
     void setUncaughtExceptionHandler(Thread.UncaughtExceptionHandler handler);
 
+    /**
+     * Get the uncaught exception handler
+     * @return the uncaught exception handler
+     */
     @Nullable Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
 
+    /**
+     * Get the catch exception handler
+     * @return the catch exception handler
+     */
     @Nullable CatchExceptionHandler getCatchExceptionHandler();
 
+    /**
+     * Set the catch exception handler
+     * @param catchExceptionHandler the catch exception handler
+     */
     void setCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler);
+
+    /**
+     * Get the remaining tasks that have not been executed
+     * @return the remaining tasks
+     */
+    @UnmodifiableView
+    List<Task> getRemainingTasks();
+
+
 }

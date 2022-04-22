@@ -1,6 +1,7 @@
 package top.focess.scheduler;
 
 import org.jetbrains.annotations.NotNull;
+import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
 import java.time.Duration;
 import java.util.concurrent.*;
@@ -54,6 +55,9 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
             if (out.get())
                 throw new TimeoutException();
         }
+
+        // because of this task is finished, even if the cancellation task cannot be cancelled (means it has already run), this task will be finished.
+        // So ignore its return value.
         task.cancel();
         return this.call();
     }
