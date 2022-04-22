@@ -38,12 +38,12 @@ public class FocessTask implements ITask {
     FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler, final String name) {
         this.runnable = runnable;
         this.scheduler = scheduler;
-        this.name = name;
+        this.name = scheduler.getName() + "-" + name;
         TASK_SET.put(this,true);
     }
 
     FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler) {
-        this(runnable,scheduler,scheduler.getName() + "-" + UUID.randomUUID().toString().substring(0, 8));
+        this(runnable,scheduler, UUID.randomUUID().toString().substring(0, 8));
     }
 
     FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler) {
