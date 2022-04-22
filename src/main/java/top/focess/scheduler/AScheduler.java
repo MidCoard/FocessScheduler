@@ -87,7 +87,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public Task run(final Runnable runnable, final Duration delay, final String name) {
+    public synchronized Task run(final Runnable runnable, final Duration delay, final String name) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this,name);
@@ -107,7 +107,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public Task runTimer(final Runnable runnable, final Duration delay, final Duration period, final String name) {
+    public synchronized Task runTimer(final Runnable runnable, final Duration delay, final Duration period, final String name) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, period, this, name);
@@ -127,7 +127,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name) {
+    public synchronized  <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this, name);
