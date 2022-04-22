@@ -37,6 +37,26 @@ public interface Scheduler {
      */
     Task run(Runnable runnable, Duration delay);
 
+
+    /**
+     * Run a task now
+     * @param runnable the task
+     * @param name     the name of the task
+     * @return the wrapped task
+     */
+    default Task run(final Runnable runnable, final String name) {
+        return this.run(runnable, Duration.ZERO, name);
+    }
+
+    /**
+     * Run a task later
+     * @param runnable the task
+     * @param delay    the delay
+     * @param name     the name of the task
+     * @return the wrapped task
+     */
+    Task run(Runnable runnable, Duration delay, String name);
+
     /**
      * Run a task timer
      *
@@ -48,6 +68,19 @@ public interface Scheduler {
      * @throws SchedulerClosedException if this scheduler is closed
      */
     Task runTimer(Runnable runnable, Duration delay, Duration period);
+
+    /**
+     * Run a task timer
+     *
+     * @param runnable the task
+     * @param delay    the delay
+     * @param period   the period
+     * @param name     the name of the task
+     * @return the wrapped task
+     *
+     * @throws SchedulerClosedException if this scheduler is closed
+     */
+    Task runTimer(Runnable runnable, Duration delay, Duration period, String name);
 
     /**
      * Submit a task now
@@ -73,6 +106,33 @@ public interface Scheduler {
      * @throws SchedulerClosedException if this scheduler is closed
      */
     <V> Callback<V> submit(Callable<V> callable, Duration delay);
+
+    /**
+     * Submit a task now
+     *
+     * @param callable the task
+     * @param name    the name of the task
+     * @param <V>      the return type
+     * @return the wrapped callback
+     *
+     * @throws SchedulerClosedException if this scheduler is closed
+     */
+    default <V> Callback<V> submit(final Callable<V> callable, final String name) {
+        return this.submit(callable, Duration.ZERO, name);
+    }
+
+    /**
+     * Submit a task later
+     *
+     * @param callable the task
+     * @param delay    the delay
+     * @param <V>      the return type
+     * @param name     the name of the task
+     * @return the wrapped callback
+     *
+     * @throws SchedulerClosedException if this scheduler is closed
+     */
+    <V> Callback<V> submit(Callable<V> callable, Duration delay, String name);
 
     /**
      * Cancel all the tasks

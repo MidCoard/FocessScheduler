@@ -1,74 +1,21 @@
 package top.focess.scheduler;
 
-import com.google.common.collect.Queues;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.UnmodifiableView;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
 
-import java.time.Duration;
-import java.util.List;
-import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 public class FocessScheduler extends AScheduler {
-
-    private final Queue<ComparableTask> tasks = Queues.newPriorityBlockingQueue();
-    private final String name;
     private final Thread thread;
 
-    private volatile boolean shouldStop;
-
     public FocessScheduler(final String name) {
-        this.name = name;
+        super(name);
         this.thread = new SchedulerThread(this.getName());
         this.thread.start();
     }
 
-    public static FocessScheduler newPrefixFocessScheduler(String prefix) {
+    public static FocessScheduler newPrefixFocessScheduler(final String prefix) {
         return new FocessScheduler(prefix + "-FocessScheduler-" + UUID.randomUUID().toString().substring(0, 8));
-    }
-
-    @Override
-    public synchronized Task run(final Runnable runnable, final Duration delay) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
-        this.notify();
-        return task;
-    }
-
-    @Override
-    public synchronized Task runTimer(final Runnable runnable, final Duration delay, final Duration period) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, period, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
-        this.notify();
-        return task;
-    }
-
-    @Override
-    public synchronized <V> Callback<V> submit(final Callable<V> callable, final Duration delay) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessCallback<V> callback = new FocessCallback<>(callable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
-        this.notify();
-        return callback;
-    }
-
-    @Override
-    public void cancelAll() {
-        this.tasks.clear();
-    }
-
-    @Override
-    public String getName() {
-        return this.name;
     }
 
     @Override
@@ -80,24 +27,9 @@ public class FocessScheduler extends AScheduler {
     }
 
     @Override
-    public boolean isClosed() {
-        return this.shouldStop;
-    }
-
-    @Override
     public synchronized void closeNow() {
         this.close();
         this.thread.stop();
-    }
-
-    @Override
-    public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
-        return this.tasks.stream().map(ComparableTask::getTask).collect(Collectors.toUnmodifiableList());
-    }
-
-    @Override
-    public String toString() {
-        return this.getName();
     }
 
     private class SchedulerThread extends Thread {
@@ -113,6 +45,7 @@ public class FocessScheduler extends AScheduler {
                     this.task.getTask().setException(new ExecutionException(e));
                     this.task.getTask().endRun();
                 }
+                this.task = null;
                 if (FocessScheduler.this.getUncaughtExceptionHandler() != null)
                     FocessScheduler.this.getUncaughtExceptionHandler().uncaughtException(t, e);
             });
@@ -149,6 +82,7 @@ public class FocessScheduler extends AScheduler {
                             this.task.getTask().endRun();
                             if (this.task.getTask().isPeriod())
                                 FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
+                            this.task = null;
                         }
                     }
                 } catch (final Exception e) {

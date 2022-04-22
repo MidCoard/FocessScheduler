@@ -27,6 +27,7 @@ public class ThreadPoolSchedulerThread extends Thread {
                 this.task.endRun();
                 scheduler.taskThreadMap.remove(this.task);
             }
+            this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                 this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
             this.scheduler.recreate(this.name);

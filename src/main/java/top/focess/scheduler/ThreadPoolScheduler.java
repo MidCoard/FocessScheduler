@@ -2,28 +2,18 @@ package top.focess.scheduler;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Queues;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.UnmodifiableView;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
 import top.focess.scheduler.exceptions.TaskNotFoundError;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
 
 public class ThreadPoolScheduler extends AScheduler {
 
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap();
-    private final Queue<ComparableTask> tasks = Queues.newPriorityBlockingQueue();
     private final List<ThreadPoolSchedulerThread> threads = Lists.newArrayList();
     private final boolean immediate;
-    private final String name;
-    private volatile boolean shouldStop;
     private int currentThread;
 
     /**
@@ -45,57 +35,21 @@ public class ThreadPoolScheduler extends AScheduler {
      * @param name      the scheduler name
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name) {
-        this.name = name;
+        super(name);
         for (int i = 0; i < poolSize; i++)
             this.threads.add(new ThreadPoolSchedulerThread(this, this.getName() + "-" + i));
         new SchedulerThread(this.getName()).start();
         this.immediate = immediate;
     }
 
+    /**
+     * New a ThreadPoolScheduler with some default configuration (not immediate).
+     * @param prefix the prefix of the scheduler name
+     * @param poolSize the thread pool size
+     */
     public ThreadPoolScheduler(final String prefix, final int poolSize) {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
-
-    @Override
-    public synchronized Task run(final Runnable runnable, final Duration delay) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
-        this.notify();
-        return task;
-    }
-
-    @Override
-    public synchronized Task runTimer(final Runnable runnable, final Duration delay, final Duration period) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, period, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
-        this.notify();
-        return task;
-    }
-
-    @Override
-    public synchronized <V> Callback<V> submit(final Callable<V> callable, final Duration delay) {
-        if (this.shouldStop)
-            throw new SchedulerClosedException(this);
-        final FocessCallback<V> callback = new FocessCallback<>(callable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
-        this.notify();
-        return callback;
-    }
-
-    @Override
-    public void cancelAll() {
-        this.tasks.clear();
-    }
-
-    @Override
-    public String getName() {
-        return this.name;
-    }
-
     @Override
     public synchronized void close() {
         super.close();
@@ -107,11 +61,6 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     @Override
-    public boolean isClosed() {
-        return this.shouldStop;
-    }
-
-    @Override
     public void closeNow() {
         super.close();
         this.shouldStop = true;
@@ -119,11 +68,6 @@ public class ThreadPoolScheduler extends AScheduler {
         for (final ThreadPoolSchedulerThread thread : this.threads)
             thread.closeNow();
         this.notify();
-    }
-
-    @Override
-    public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
-        return this.tasks.stream().map(ComparableTask::getTask).collect(Collectors.toUnmodifiableList());
     }
 
     public void cancel(final ITask task) {
@@ -147,26 +91,21 @@ public class ThreadPoolScheduler extends AScheduler {
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + task.getPeriod().toMillis(), task));
     }
 
-    @Override
-    public String toString() {
-        return this.getName();
-    }
-
     @Nullable
     public Thread.UncaughtExceptionHandler getThreadUncaughtExceptionHandler() {
-        return uncaughtExceptionHandler;
+        return this.uncaughtExceptionHandler;
     }
 
-    public void setThreadUncaughtExceptionHandler(Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
+    public void setThreadUncaughtExceptionHandler(final Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
     }
 
     @Nullable
     public CatchExceptionHandler getThreadCatchExceptionHandler() {
-        return catchExceptionHandler;
+        return this.catchExceptionHandler;
     }
 
-    public void setThreadCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler) {
+    public void setThreadCatchExceptionHandler(final CatchExceptionHandler catchExceptionHandler) {
         this.catchExceptionHandler = catchExceptionHandler;
     }
 

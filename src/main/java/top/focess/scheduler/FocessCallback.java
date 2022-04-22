@@ -4,6 +4,10 @@ import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -12,6 +16,10 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     private static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessCallback");
     private final Callable<V> callback;
     private V value;
+    FocessCallback(final Callable<V> callback, final Scheduler scheduler, final String name) {
+        super(null, scheduler, name);
+        this.callback = callback;
+    }
 
     FocessCallback(final Callable<V> callback, final Scheduler scheduler) {
         super(null, scheduler);
@@ -31,7 +39,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
 
     @Override
     public V waitCall() throws InterruptedException, ExecutionException {
-        join();
+        this.join();
         return this.call();
     }
 
@@ -71,4 +79,8 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
         }
     }
 
+    @Override
+    public String toString() {
+        return this.getName();
+    }
 }

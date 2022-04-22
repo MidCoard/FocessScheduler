@@ -4,7 +4,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.time.Duration;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 
@@ -15,19 +15,45 @@ public class FocessTask implements ITask {
     private final String name;
     protected boolean isRunning;
     protected boolean isFinished;
+
     protected ExecutionException exception;
     private Duration period;
     private boolean isPeriod;
     private ComparableTask nativeTask;
 
-    FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler) {
+    private static final Map<Task,Boolean> TASK_SET = new WeakHashMap<>();
+
+    /**
+     * Get all the tasks which are not gc yet
+     *
+     * Note: this is only for debug.
+     *
+     * @return all the tasks which are not gc yet
+     */
+    public static Set<Task> getCallbacks() {
+        return Collections.unmodifiableSet(TASK_SET.keySet());
+    }
+
+
+    FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler, final String name) {
         this.runnable = runnable;
         this.scheduler = scheduler;
-        this.name = scheduler.getName() + "-" + UUID.randomUUID().toString().substring(0, 8);
+        this.name = name;
+        TASK_SET.put(this,true);
+    }
+
+    FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler) {
+        this(runnable,scheduler,scheduler.getName() + "-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
     FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler) {
         this(runnable, scheduler);
+        this.isPeriod = true;
+        this.period = period;
+    }
+
+    FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler, final String name) {
+        this(runnable, scheduler, name);
         this.isPeriod = true;
         this.period = period;
     }
@@ -121,5 +147,10 @@ public class FocessTask implements ITask {
     @Override
     public Duration getPeriod() {
         return this.period;
+    }
+
+    @Override
+    public String toString() {
+        return this.getName();
     }
 }
