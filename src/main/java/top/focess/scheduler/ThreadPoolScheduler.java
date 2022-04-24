@@ -25,6 +25,7 @@ public class ThreadPoolScheduler extends AScheduler {
      */
     private CatchExceptionHandler catchExceptionHandler;
 
+
     /**
      * New a ThreadPoolScheduler, the scheduler can run tasks in parallel.
      * The next task will be executed immediately if the immediate is true, otherwise the next task will be executed when there is an available thread.
@@ -33,17 +34,31 @@ public class ThreadPoolScheduler extends AScheduler {
      * @param poolSize  the thread pool size
      * @param immediate true if the scheduler should run immediately, false otherwise
      * @param name      the scheduler name
+     * @param isDaemon  true if the scheduler is a daemon thread, false otherwise
      */
-    public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name) {
+    public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name,final boolean isDaemon) {
         super(name);
         for (int i = 0; i < poolSize; i++)
             this.threads.add(new ThreadPoolSchedulerThread(this, this.getName() + "-" + i));
-        new SchedulerThread(this.getName()).start();
+        Thread thread = new SchedulerThread(this.getName());
+        thread.setDaemon(isDaemon);
+        thread.start();
         this.immediate = immediate;
     }
 
     /**
-     * New a ThreadPoolScheduler with some default configuration (not immediate).
+     * New a ThreadPoolScheduler with some default configuration (not daemon).
+     *
+     * @param poolSize  the thread pool size
+     * @param immediate true if the scheduler should run immediately, false otherwise
+     * @param name      the scheduler name
+     */
+    public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name) {
+        this(poolSize, immediate, name, false);
+    }
+
+    /**
+     * New a ThreadPoolScheduler with some default configuration (not immediate, not daemon).
      * @param prefix the prefix of the scheduler name
      * @param poolSize the thread pool size
      */

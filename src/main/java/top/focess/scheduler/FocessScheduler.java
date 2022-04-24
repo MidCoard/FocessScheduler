@@ -8,9 +8,27 @@ import java.util.concurrent.ExecutionException;
 public class FocessScheduler extends AScheduler {
     private final Thread thread;
 
+    /**
+     * New a FocessScheduler with some default configuration (not daemon).
+     *
+     * @param name the plugin
+     */
     public FocessScheduler(final String name) {
+        this(name, false);
+    }
+
+    /**
+     * New a FocessScheduler, the scheduler will run all tasks in time order.
+     * For example, if the finish-time of the last task is after the start-time of the next task, the next task will only be executed after the last task is finished.
+     * As a result, the task running in this scheduler cannot be cancelled if it is already running.
+     *
+     * @param name the plugin
+     * @param isDaemon whether the scheduler is a daemon thread
+     */
+    public FocessScheduler(final String name, boolean isDaemon) {
         super(name);
         this.thread = new SchedulerThread(this.getName());
+        this.thread.setDaemon(isDaemon);
         this.thread.start();
     }
 

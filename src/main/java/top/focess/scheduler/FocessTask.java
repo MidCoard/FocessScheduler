@@ -82,7 +82,7 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public void setException(final ExecutionException e) {
+    public synchronized void setException(final ExecutionException e) {
         this.exception = e;
     }
 
@@ -122,12 +122,14 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public boolean isCancelled() {
+    public synchronized boolean isCancelled() {
         return this.nativeTask.isCancelled();
     }
 
     @Override
     public synchronized void join() throws InterruptedException, CancellationException, ExecutionException {
+        if (this.exception != null)
+            throw this.exception;
         if (this.isFinished())
             return;
         if (this.isCancelled())

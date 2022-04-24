@@ -33,6 +33,7 @@ public class ThreadPoolSchedulerThread extends Thread {
             if (!this.scheduler.isClosed())
                 this.scheduler.recreate(this.name);
         });
+        this.setDaemon(true);
         this.start();
     }
 

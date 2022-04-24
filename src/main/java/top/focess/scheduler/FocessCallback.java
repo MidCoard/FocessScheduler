@@ -23,7 +23,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     }
 
     @Override
-    public V call() throws TaskNotFinishedException, CancellationException, ExecutionException {
+    public synchronized V call() throws TaskNotFinishedException, CancellationException, ExecutionException {
         if (this.isCancelled())
             throw new CancellationException("Task is cancelled");
         if (!this.isFinished)
@@ -34,7 +34,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     }
 
     @Override
-    public V waitCall() throws InterruptedException, ExecutionException {
+    public synchronized V waitCall() throws InterruptedException, ExecutionException {
         this.join();
         return this.call();
     }
