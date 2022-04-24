@@ -30,7 +30,8 @@ public class ThreadPoolSchedulerThread extends Thread {
             this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                 this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
-            this.scheduler.recreate(this.name);
+            if (!this.scheduler.isClosed())
+                this.scheduler.recreate(this.name);
         });
         this.start();
     }
@@ -92,7 +93,8 @@ public class ThreadPoolSchedulerThread extends Thread {
 
     public void cancel() {
         this.stop();
-        this.scheduler.recreate(this.name);
+        // no need for recreate, because the stop method will throw an uncaught exception
+        // and recreate the thread will be called in the uncaught exception handler
     }
 
 }

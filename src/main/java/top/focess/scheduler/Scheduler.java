@@ -194,5 +194,4 @@ public interface Scheduler {
     @UnmodifiableView
     List<Task> getRemainingTasks();
 
-
 }
