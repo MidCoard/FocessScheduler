@@ -4,6 +4,8 @@ import top.focess.scheduler.exceptions.TaskNotFoundError;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
@@ -77,13 +79,25 @@ public interface Task {
     boolean isCancelled();
 
     /**
-     * wait until this task is finished
+     * Wait until this task is finished
      *
      * @throws ExecutionException    if there is any exception in the execution processing
      * @throws InterruptedException  if the task is interrupted
      * @throws CancellationException if the task is cancelled
      */
     void join() throws ExecutionException, InterruptedException, CancellationException;
+
+    /**
+     * Wait for the time
+     *
+     * @param timeout the timeout
+     * @param unit    the time unit
+     * @throws InterruptedException  if the current thread was interrupted while waiting
+     * @throws ExecutionException    if there is any exception in the execution processing
+     * @throws TimeoutException      if the time is out
+     * @throws CancellationException if the task is cancelled
+     */
+    void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException;
 
     /**
      * Set the uncaught exception handler

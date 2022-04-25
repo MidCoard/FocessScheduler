@@ -3,15 +3,12 @@ package top.focess.scheduler;
 import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
-import java.time.Duration;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class FocessCallback<V> extends FocessTask implements Callback<V> {
 
-    private static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessCallback");
     private final Callable<V> callback;
     private V value;
     private Function<ExecutionException, V> handler;
@@ -26,48 +23,21 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
         this.callback = callback;
     }
 
+    FocessCallback(final Callable<V> callback, final Scheduler scheduler, final String name, final Function<ExecutionException, V> handler) {
+        this(callback, scheduler, name);
+        this.handler = handler;
+    }
+
     @Override
     public synchronized V call() throws TaskNotFinishedException, CancellationException, ExecutionException {
-        if (this.isCancelled())
-            throw new CancellationException("Task is cancelled");
-        if (!this.isFinished)
-            throw new TaskNotFinishedException(this);
         if (this.exception != null)
             throw this.exception;
-        return this.value;
-    }
-
-    @Override
-    public synchronized V waitCall() throws InterruptedException, ExecutionException {
-        this.join();
-        return this.call();
-    }
-
-    @Override
-    public synchronized V get(final long timeout, @NotNull final TimeUnit unit) throws InterruptedException, TimeoutException, ExecutionException {
-        if (this.isFinished())
-            return this.value;
         if (this.isCancelled())
             throw new CancellationException("Task is cancelled");
-        final AtomicBoolean out = new AtomicBoolean(false);
-        final Task task = DEFAULT_SCHEDULER.run(() -> {
-            out.set(true);
-            synchronized (FocessCallback.this) {
-                FocessCallback.this.notifyAll();
-            }
-        }, Duration.ofMillis(unit.toMillis(timeout)));
-        while (true) {
-            this.wait();
-            if (this.isCancelled() || this.isFinished())
-                break;
-            if (out.get())
-                throw new TimeoutException();
-        }
-
-        // because of this task is finished, even if the cancellation task cannot be cancelled (means it has already run), this task will be finished.
-        // So ignore its return value.
-        task.cancel();
-        return this.call();
+        // if the task is cancelled, the task is not finished. So first check if the task is cancelled.
+        if (!this.isFinished)
+            throw new TaskNotFinishedException(this);
+        return this.value;
     }
 
     @Override

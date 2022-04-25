@@ -8,6 +8,9 @@ import top.focess.scheduler.exceptions.SchedulerClosedException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Used to schedule task
@@ -194,4 +197,47 @@ public interface Scheduler {
     @UnmodifiableView
     List<Task> getRemainingTasks();
 
+    /**
+     * Submit a task now with exception handler
+     * @param runnable the task
+     * @param name the name of the task
+     * @param handler the exception handler
+     * @return the wrapped task
+     */
+    default Task run(final Runnable runnable, final String name, final Consumer<ExecutionException> handler) {
+        return this.run(runnable, Duration.ZERO, name, handler);
+    }
+
+    /**
+     * Submit a task later with exception handler
+     * @param runnable the task
+     * @param delay the delay
+     * @param name the name of the task
+     * @param handler the exception handler
+     * @return the wrapped task
+     */
+    Task run(final Runnable runnable, final Duration delay, final String name, final Consumer<ExecutionException> handler);
+
+    /**
+     * Submit a task now with exception handler
+     * @param callable the task
+     * @param name the name of the task
+     * @param handler the exception handler
+     * @return the wrapped callback
+     * @param <V> the return type
+     */
+    default <V> Callback<V> submit(final Callable<V> callable, final String name, final Function<ExecutionException,V> handler) {
+        return this.submit(callable, Duration.ZERO, name, handler);
+    }
+
+    /**
+     * Submit a task later with exception handler
+     * @param callable the task
+     * @param delay the delay
+     * @param name the name of the task
+     * @param handler the exception handler
+     * @return the wrapped callback
+     * @param <V> the return type
+     */
+    <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name, final Function<ExecutionException,V> handler);
 }

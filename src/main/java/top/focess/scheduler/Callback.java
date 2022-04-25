@@ -29,8 +29,12 @@ public interface Callback<V> extends Task, Future<V> {
      * @return the target value
      * @throws InterruptedException if the current thread was interrupted while waiting
      * @throws ExecutionException   if there is any exception in the execution processing
+     * @see #join()
      */
-    V waitCall() throws InterruptedException, ExecutionException;
+    default V waitCall() throws InterruptedException, ExecutionException {
+        this.join();
+        return this.call();
+    }
 
     /**
      * Indicate whether this task is done or not
@@ -50,6 +54,7 @@ public interface Callback<V> extends Task, Future<V> {
      * @throws InterruptedException if the current thread was interrupted while waiting
      * @throws ExecutionException   if there is any exception in the execution processing
      * @see #waitCall()
+     * @see #join()
      */
     @Override
     default V get() throws InterruptedException, ExecutionException {
@@ -66,14 +71,13 @@ public interface Callback<V> extends Task, Future<V> {
      * @throws ExecutionException    if there is any exception in the execution processing
      * @throws TimeoutException      if the time is out
      * @throws CancellationException if the task is cancelled
+     * @see #join(long, TimeUnit)
      */
     @Override
-    V get(long timeout, @NotNull TimeUnit unit)
-            throws InterruptedException, ExecutionException, TimeoutException, CancellationException;
-
-    @Override
-    default void join() throws ExecutionException, CancellationException, InterruptedException {
-        this.waitCall();
+    default V get(long timeout, @NotNull TimeUnit unit)
+            throws InterruptedException, ExecutionException, TimeoutException, CancellationException {
+        this.join(timeout, unit);
+        return this.call();
     }
 
     /**

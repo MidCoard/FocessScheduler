@@ -13,6 +13,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public abstract class AScheduler implements Scheduler {
@@ -134,6 +137,26 @@ public abstract class AScheduler implements Scheduler {
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
         this.notify();
         return callback;
+    }
+
+    @Override
+    public <V> Callback<V> submit(Callable<V> callable, Duration delay, String name, Function<ExecutionException, V> handler) {
+        if (this.shouldStop)
+            throw new SchedulerClosedException(this);
+        final FocessCallback<V> callback = new FocessCallback<>(callable, this, name, handler);
+        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
+        this.notify();
+        return callback;
+    }
+
+    @Override
+    public Task run(Runnable runnable, Duration delay, String name, Consumer<ExecutionException> handler) {
+        if (this.shouldStop)
+            throw new SchedulerClosedException(this);
+        final FocessTask task = new FocessTask(runnable, this, name, handler);
+        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        this.notify();
+        return task;
     }
 
     public boolean isClosed() {
