@@ -140,7 +140,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public <V> Callback<V> submit(Callable<V> callable, Duration delay, String name, Function<ExecutionException, V> handler) {
+    public synchronized  <V> Callback<V> submit(Callable<V> callable, Duration delay, String name, Function<ExecutionException, V> handler) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this, name, handler);
@@ -150,7 +150,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public Task run(Runnable runnable, Duration delay, String name, Consumer<ExecutionException> handler) {
+    public synchronized Task run(Runnable runnable, Duration delay, String name, Consumer<ExecutionException> handler) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this, name, handler);
