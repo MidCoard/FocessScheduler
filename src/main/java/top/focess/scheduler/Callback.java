@@ -4,6 +4,7 @@ import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 /**
  * The wrapped callback. You can use this to handle callable processing
@@ -74,4 +75,13 @@ public interface Callback<V> extends Task, Future<V> {
     default void join() throws ExecutionException, CancellationException, InterruptedException {
         this.waitCall();
     }
+
+    /**
+     * Set the exception handler
+     * <p>
+     * Note: this handler will clear the exception mark of this task
+     *
+     * @param handler the exception handler, the {@link Function} return value will be used in the {@link #call()} method
+     */
+    void setExceptionHandler(Function<ExecutionException,V> handler);
 }

@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 public class FocessTask implements ITask {
 
@@ -22,6 +23,7 @@ public class FocessTask implements ITask {
     private ComparableTask nativeTask;
 
     private static final Map<Task,Boolean> TASK_SET = new WeakHashMap<>();
+    private Consumer<ExecutionException> handler;
 
     /**
      * Get all the tasks which are not gc yet
@@ -83,7 +85,9 @@ public class FocessTask implements ITask {
 
     @Override
     public synchronized void setException(final ExecutionException e) {
-        this.exception = e;
+        if (this.handler != null)
+            this.handler.accept(e);
+        else this.exception = e;
     }
 
     @Override
@@ -139,6 +143,11 @@ public class FocessTask implements ITask {
             throw new CancellationException("Task is cancelled");
         if (this.exception != null)
             throw this.exception;
+    }
+
+    @Override
+    public synchronized void setExceptionHandler(Consumer<ExecutionException> handler) {
+        this.handler = handler;
     }
 
     @Override

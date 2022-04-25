@@ -6,12 +6,16 @@ import top.focess.scheduler.exceptions.TaskNotFinishedException;
 import java.time.Duration;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class FocessCallback<V> extends FocessTask implements Callback<V> {
 
     private static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessCallback");
     private final Callable<V> callback;
     private V value;
+    private Function<ExecutionException, V> handler;
+
     FocessCallback(final Callable<V> callback, final Scheduler scheduler, final String name) {
         super(null, scheduler, name);
         this.callback = callback;
@@ -67,6 +71,18 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     }
 
     @Override
+    public synchronized void setException(final ExecutionException e) {
+        if (this.handler != null)
+            this.value = this.handler.apply(e);
+        else this.exception = e;
+    }
+
+    @Override
+    public synchronized void setExceptionHandler(Function<ExecutionException, V> handler) {
+        this.handler = handler;
+    }
+
+    @Override
     public void run() throws ExecutionException {
         try {
             this.value = this.callback.call();
@@ -78,5 +94,13 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     @Override
     public String toString() {
         return this.getName();
+    }
+
+    @Override
+    public synchronized void setExceptionHandler(Consumer<ExecutionException> handler) {
+        this.handler = e -> {
+            handler.accept(e);
+            return null;
+        };
     }
 }

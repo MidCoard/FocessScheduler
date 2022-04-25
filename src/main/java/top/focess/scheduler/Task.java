@@ -4,6 +4,7 @@ import top.focess.scheduler.exceptions.TaskNotFoundError;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 /**
  * The wrapped task. You can use this to handle runnable processing
@@ -83,5 +84,14 @@ public interface Task {
      * @throws CancellationException if the task is cancelled
      */
     void join() throws ExecutionException, InterruptedException, CancellationException;
+
+    /**
+     * Set the uncaught exception handler
+     * <p>
+     * Note: this handler will clear exception mark of this task
+     *
+     * @param handler the handler
+     */
+    void setExceptionHandler(Consumer<ExecutionException> handler);
 
 }
