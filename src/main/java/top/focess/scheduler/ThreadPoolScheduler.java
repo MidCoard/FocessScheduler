@@ -14,6 +14,7 @@ public class ThreadPoolScheduler extends AScheduler {
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap();
     private final List<ThreadPoolSchedulerThread> threads = Lists.newArrayList();
     private final boolean immediate;
+    private final boolean isDaemon;
     private int currentThread;
 
     /**
@@ -44,6 +45,7 @@ public class ThreadPoolScheduler extends AScheduler {
         thread.setDaemon(isDaemon);
         thread.start();
         this.immediate = immediate;
+        this.isDaemon = isDaemon;
     }
 
     /**
@@ -128,6 +130,7 @@ public class ThreadPoolScheduler extends AScheduler {
 
         public SchedulerThread(final String name) {
             super(name);
+            this.setDaemon(isDaemon);
             this.setUncaughtExceptionHandler((t, e) -> {
                 ThreadPoolScheduler.this.close();
                 if (ThreadPoolScheduler.this.getUncaughtExceptionHandler() != null)

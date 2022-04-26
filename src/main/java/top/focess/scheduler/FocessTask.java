@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 
 public class FocessTask implements ITask {
 
-    static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessCallback");
+    static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessCallback",true);
     private final Runnable runnable;
     private final Scheduler scheduler;
     private final String name;
