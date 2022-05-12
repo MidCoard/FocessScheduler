@@ -78,6 +78,7 @@ public class FocessTask implements ITask {
     public synchronized void clear() {
         this.isFinished = false;
         this.isRunning = false;
+        this.exception = null;
     }
 
     @Override

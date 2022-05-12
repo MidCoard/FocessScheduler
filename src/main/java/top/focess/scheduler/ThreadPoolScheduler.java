@@ -105,6 +105,7 @@ public class ThreadPoolScheduler extends AScheduler {
     public void rerun(final ITask task) {
         if (this.shouldStop)
             return;
+        task.clear();
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + task.getPeriod().toMillis(), task));
     }
 

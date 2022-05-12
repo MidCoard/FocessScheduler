@@ -98,8 +98,12 @@ public class FocessScheduler extends AScheduler {
                                 this.task.getTask().setException(new ExecutionException(e));
                             }
                             this.task.getTask().endRun();
-                            if (this.task.getTask().isPeriod())
+                            if (this.task.getTask().isPeriod()) {
+                                if (shouldStop)
+                                    return;
+                                this.task.getTask().clear();
                                 FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
+                            }
                             this.task = null;
                         }
                     }
