@@ -5,8 +5,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.concurrent.ExecutionException;
 
 public class ThreadPoolSchedulerThread extends Thread {
-
-    private final Object lock = new Object();
     private final ThreadPoolScheduler scheduler;
     private final String name;
 
@@ -20,12 +18,13 @@ public class ThreadPoolSchedulerThread extends Thread {
         this.scheduler = scheduler;
         this.name = name;
         this.setUncaughtExceptionHandler((t, e) -> {
-            this.shouldStop = true;
-            this.isAvailable = false;
+            this.close();
             if (this.task != null) {
                 this.task.setException(new ExecutionException(e));
                 this.task.endRun();
                 scheduler.taskThreadMap.remove(this.task);
+                if (this.task.isPeriod())
+                    this.scheduler.rerun(this.task);
             }
             this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
@@ -41,12 +40,12 @@ public class ThreadPoolSchedulerThread extends Thread {
     public void run() {
         while (true) {
             try {
-                if (this.isAvailable)
-                    synchronized (this.lock) {
-                        this.lock.wait();
-                    }
-                if (this.shouldStop)
-                    break;
+                synchronized (this) {
+                    if (this.shouldStop)
+                        break;
+                    if (this.isAvailable)
+                        this.wait();
+                }
                 if (this.task != null) {
                     this.task.startRun();
                     try {
@@ -72,19 +71,16 @@ public class ThreadPoolSchedulerThread extends Thread {
         return this.isAvailable;
     }
 
-    public void startTask(final ITask task) {
+    public synchronized void startTask(final ITask task) {
         this.isAvailable = false;
         this.task = task;
-        synchronized (this.lock) {
-            this.lock.notify();
-        }
+        this.notify();
     }
 
-    public void close() {
+    public synchronized void close() {
         this.shouldStop = true;
-        synchronized (this.lock) {
-            this.lock.notify();
-        }
+        this.isAvailable = false;
+        this.notify();
     }
 
     public void closeNow() {

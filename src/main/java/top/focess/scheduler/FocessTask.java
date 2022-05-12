@@ -64,9 +64,14 @@ public class FocessTask implements ITask {
     }
 
     FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler, final String name) {
+        this(runnable, period, scheduler, name, null);
+    }
+
+    FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
         this(runnable, scheduler, name);
         this.isPeriod = true;
         this.period = period;
+        this.handler = handler;
     }
 
     @Override

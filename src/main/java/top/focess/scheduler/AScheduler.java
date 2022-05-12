@@ -159,6 +159,16 @@ public abstract class AScheduler implements Scheduler {
         return task;
     }
 
+    @Override
+    public synchronized Task runTimer(Runnable runnable, Duration delay, Duration period, String name, Consumer<ExecutionException> handler) {
+        if (this.shouldStop)
+            throw new SchedulerClosedException(this);
+        final FocessTask task = new FocessTask(runnable, period, this, name, handler);
+        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        this.notify();
+        return task;
+    }
+
     public boolean isClosed() {
         return this.shouldStop;
     }

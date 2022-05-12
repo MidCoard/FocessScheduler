@@ -86,6 +86,20 @@ public interface Scheduler {
     Task runTimer(Runnable runnable, Duration delay, Duration period, String name);
 
     /**
+     * Run a task timer
+     *
+     * @param runnable the task
+     * @param delay    the delay
+     * @param period   the period
+     * @param name     the name of the task
+     * @param handler  the exception handler
+     * @return the wrapped task
+     *
+     * @throws SchedulerClosedException if this scheduler is closed
+     */
+    Task runTimer(Runnable runnable, Duration delay, Duration period, String name, Consumer<ExecutionException> handler);
+
+    /**
      * Submit a task now
      *
      * @param callable the task
@@ -240,4 +254,6 @@ public interface Scheduler {
      * @param <V> the return type
      */
     <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name, final Function<ExecutionException,V> handler);
+
+
 }

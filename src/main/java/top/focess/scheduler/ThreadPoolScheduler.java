@@ -102,7 +102,7 @@ public class ThreadPoolScheduler extends AScheduler {
             }
     }
 
-    public void rerun(final ITask task) {
+    public synchronized void rerun(final ITask task) {
         if (this.shouldStop)
             return;
         task.clear();
