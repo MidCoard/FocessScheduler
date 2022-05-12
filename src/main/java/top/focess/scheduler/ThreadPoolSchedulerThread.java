@@ -23,7 +23,7 @@ public class ThreadPoolSchedulerThread extends Thread {
                 this.task.setException(new ExecutionException(e));
                 this.task.endRun();
                 scheduler.taskThreadMap.remove(this.task);
-                if (this.task.isPeriod())
+                if (this.task.isPeriod() && !this.task.isCancelled())
                     this.scheduler.rerun(this.task);
             }
             this.task = null;
@@ -55,7 +55,7 @@ public class ThreadPoolSchedulerThread extends Thread {
                     }
                     this.task.endRun();
                     this.scheduler.taskThreadMap.remove(this.task);
-                    if (this.task.isPeriod())
+                    if (this.task.isPeriod() && !this.task.isCancelled())
                         this.scheduler.rerun(this.task);
                     this.task = null;
                 }

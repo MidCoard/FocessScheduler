@@ -98,7 +98,7 @@ public class FocessScheduler extends AScheduler {
                                 this.task.getTask().setException(new ExecutionException(e));
                             }
                             this.task.getTask().endRun();
-                            if (this.task.getTask().isPeriod()) {
+                            if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
                                 if (shouldStop)
                                     return;
                                 this.task.getTask().clear();

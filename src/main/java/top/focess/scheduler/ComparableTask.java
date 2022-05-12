@@ -30,7 +30,7 @@ public class ComparableTask implements Comparable<ComparableTask> {
                     throw new UnsupportedOperationException();
                 if (this.task.isRunning())
                     this.task.cancel0();
-            } else if (this.task.isRunning())
+            } else if (this.task.isRunning() && !this.getTask().isPeriod())
                 return false;
             this.isCancelled = true;
             this.task.notifyAll();

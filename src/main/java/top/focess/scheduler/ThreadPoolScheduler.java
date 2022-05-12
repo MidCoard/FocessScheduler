@@ -107,6 +107,7 @@ public class ThreadPoolScheduler extends AScheduler {
             return;
         task.clear();
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + task.getPeriod().toMillis(), task));
+        this.notify();
     }
 
     @Nullable
