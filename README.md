@@ -11,12 +11,12 @@ See  ```Executors``` in the java package ```java.util.concurrent```
 <dependency>
     <groupId>top.focess</groupId>
     <artifactId>focess-scheduler</artifactId>
-    <version>1.1.5</version>
+    <version>1.1.6</version>
 </dependency>
 ```
 
 Gradle:
 
 ```gradle
-implementation 'top.focess:focess-scheduler:1.1.5'
+implementation 'top.focess:focess-scheduler:1.1.6'
 ```
