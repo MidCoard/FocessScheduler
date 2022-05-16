@@ -75,7 +75,7 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public void setNativeTask(final ComparableTask nativeTask) {
+    public synchronized void setNativeTask(final ComparableTask nativeTask) {
         this.nativeTask = nativeTask;
     }
 
