@@ -61,8 +61,7 @@ public class ThreadPoolSchedulerThread extends Thread {
                 }
                 this.isAvailable = true;
             } catch (final Exception e) {
-                if (this.scheduler.getThreadCatchExceptionHandler() != null)
-                    this.scheduler.getThreadCatchExceptionHandler().catchException(this,e);
+                e.printStackTrace();
             }
         }
     }

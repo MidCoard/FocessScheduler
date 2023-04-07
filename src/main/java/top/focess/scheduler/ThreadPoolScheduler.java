@@ -184,8 +184,7 @@ public class ThreadPoolScheduler extends AScheduler {
                             }
                         }
                 } catch (final Exception e) {
-                    if (ThreadPoolScheduler.this.getCatchExceptionHandler() != null)
-                        ThreadPoolScheduler.this.getCatchExceptionHandler().catchException(this,e);
+                    e.printStackTrace();
                 }
             }
         }

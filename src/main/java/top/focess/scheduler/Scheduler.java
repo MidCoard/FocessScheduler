@@ -193,18 +193,6 @@ public interface Scheduler {
     @Nullable Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
 
     /**
-     * Get the catch exception handler
-     * @return the catch exception handler
-     */
-    @Nullable CatchExceptionHandler getCatchExceptionHandler();
-
-    /**
-     * Set the catch exception handler
-     * @param catchExceptionHandler the catch exception handler
-     */
-    void setCatchExceptionHandler(CatchExceptionHandler catchExceptionHandler);
-
-    /**
      * Get the remaining tasks that have not been executed
      * @return the remaining tasks
      */

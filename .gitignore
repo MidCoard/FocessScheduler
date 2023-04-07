@@ -1,3 +1,4 @@
 .idea
 target
 focess-scheduler-*.jar
+src/test/java/*

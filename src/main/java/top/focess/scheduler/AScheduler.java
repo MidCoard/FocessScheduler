@@ -26,11 +26,6 @@ public abstract class AScheduler implements Scheduler {
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
-    /**
-     * The catch exception handler
-     */
-    private CatchExceptionHandler catchExceptionHandler;
-
     protected final Queue<ComparableTask> tasks = Queues.newPriorityBlockingQueue();
 
     protected volatile boolean shouldStop;
@@ -65,18 +60,6 @@ public abstract class AScheduler implements Scheduler {
     @Nullable
     public Thread.UncaughtExceptionHandler getUncaughtExceptionHandler() {
         return this.uncaughtExceptionHandler;
-    }
-
-
-    @Override
-    @Nullable
-    public CatchExceptionHandler getCatchExceptionHandler() {
-        return this.catchExceptionHandler;
-    }
-
-    @Override
-    public void setCatchExceptionHandler(final CatchExceptionHandler catchExceptionHandler) {
-        this.catchExceptionHandler = catchExceptionHandler;
     }
 
     @Override

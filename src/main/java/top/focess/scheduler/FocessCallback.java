@@ -1,9 +1,10 @@
 package top.focess.scheduler;
 
-import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -61,10 +62,6 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
         }
     }
 
-    @Override
-    public String toString() {
-        return this.getName();
-    }
 
     @Override
     public synchronized void setExceptionHandler(Consumer<ExecutionException> handler) {

@@ -108,8 +108,7 @@ public class FocessScheduler extends AScheduler {
                         }
                     }
                 } catch (final Exception e) {
-                    if (FocessScheduler.this.getCatchExceptionHandler() != null)
-                        FocessScheduler.this.getCatchExceptionHandler().catchException(this,e);
+                    e.printStackTrace();
                 }
             }
         }
