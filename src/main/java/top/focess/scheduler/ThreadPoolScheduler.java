@@ -21,10 +21,6 @@ public class ThreadPoolScheduler extends AScheduler {
      * The uncaught exception handler
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
-    /**
-     * The catch exception handler
-     */
-    private CatchExceptionHandler catchExceptionHandler;
 
 
     /**
@@ -117,15 +113,6 @@ public class ThreadPoolScheduler extends AScheduler {
 
     public void setThreadUncaughtExceptionHandler(final Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
-    }
-
-    @Nullable
-    public CatchExceptionHandler getThreadCatchExceptionHandler() {
-        return this.catchExceptionHandler;
-    }
-
-    public void setThreadCatchExceptionHandler(final CatchExceptionHandler catchExceptionHandler) {
-        this.catchExceptionHandler = catchExceptionHandler;
     }
 
     private class SchedulerThread extends Thread {

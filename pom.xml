@@ -9,7 +9,7 @@
     <description>Focess Scheduler implement</description>
     <groupId>top.focess</groupId>
     <artifactId>focess-scheduler</artifactId>
-    <version>1.1.7</version>
+    <version>1.1.8</version>
 
 
     <distributionManagement>
