@@ -1,5 +1,6 @@
 package top.focess.scheduler;
 
+import com.google.common.collect.Lists;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,9 +26,10 @@ public class FocessTask implements ITask {
     private Duration period;
     private boolean isPeriod;
     private ComparableTask nativeTask;
+    private Consumer<ExecutionException> handler;
+    private final List<TaskPool> taskPools = Lists.newArrayList();
 
     private static final Map<Task,Boolean> TASK_SET = new WeakHashMap<>();
-    private Consumer<ExecutionException> handler;
 
     /**
      * Get all the tasks which are not gc yet
@@ -95,6 +97,10 @@ public class FocessTask implements ITask {
         this.isRunning = false;
         this.isFinished = true;
         this.notifyAll();
+        for (final TaskPool taskPool : this.taskPools) {
+            taskPool.removeTask(this);
+            taskPool.finishTask(this);
+        }
     }
 
     @Override
@@ -105,8 +111,18 @@ public class FocessTask implements ITask {
     }
 
     @Override
+    public synchronized void addTaskPool(final TaskPool taskPool) {
+        this.taskPools.add(taskPool);
+    }
+
+    @Override
     public boolean isSingleThread() {
         return this.scheduler instanceof ThreadPoolScheduler;
+    }
+
+    @Override
+    public synchronized void removeTaskPool(final TaskPool taskPool) {
+        this.taskPools.remove(taskPool);
     }
 
     @Override

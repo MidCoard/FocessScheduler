@@ -7,6 +7,8 @@ interface ITask extends Task {
 
     boolean isSingleThread();
 
+    void removeTaskPool(TaskPool taskPool);
+
     void run() throws ExecutionException;
 
     Duration getPeriod();
@@ -27,4 +29,6 @@ interface ITask extends Task {
     void endRun();
 
     void setException(ExecutionException e);
+
+    void addTaskPool(TaskPool taskPool);
 }
