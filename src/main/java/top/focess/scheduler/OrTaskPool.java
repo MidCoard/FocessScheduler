@@ -1,8 +1,8 @@
 package top.focess.scheduler;
 
 public class OrTaskPool extends TaskPool {
-	public OrTaskPool(final Runnable runnable) {
-		super(runnable);
+	public OrTaskPool(final Scheduler scheduler, final Runnable runnable) {
+		super(scheduler, runnable);
 	}
 
 	@Override
@@ -10,7 +10,7 @@ public class OrTaskPool extends TaskPool {
 		if (this.isFinished)
 			return;
 		if (this.runnable != null)
-			this.runnable.run();
+			this.scheduler.run(this.runnable);
 		this.isFinished = true;
 	}
 }

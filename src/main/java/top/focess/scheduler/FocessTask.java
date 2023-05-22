@@ -27,7 +27,7 @@ public class FocessTask implements ITask {
     private boolean isPeriod;
     private ComparableTask nativeTask;
     private Consumer<ExecutionException> handler;
-    private final List<TaskPool> taskPools = Lists.newArrayList();
+    private final List<TaskPool> taskPools = Lists.newCopyOnWriteArrayList();
 
     private static final Map<Task,Boolean> TASK_SET = new WeakHashMap<>();
 

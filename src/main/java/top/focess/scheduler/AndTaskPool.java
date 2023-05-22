@@ -2,8 +2,8 @@ package top.focess.scheduler;
 
 public class AndTaskPool extends TaskPool {
 
-	public AndTaskPool(final Runnable runnable) {
-		super(runnable);
+	public AndTaskPool(final Scheduler scheduler, final Runnable runnable) {
+		super(scheduler, runnable);
 	}
 
 	@Override
@@ -11,7 +11,7 @@ public class AndTaskPool extends TaskPool {
 		if (this.tasks.size() != 0 || this.isFinished)
 			return;
 		if (this.runnable != null)
-			this.runnable.run();
+			this.scheduler.run(this.runnable);
 		this.isFinished = true;
 	}
 
