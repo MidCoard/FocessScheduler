@@ -189,4 +189,29 @@ public class TestUtil {
         andTaskPool.join();
         assertTrue(flag.get());
     }
+
+    @Test
+    void testFocessScheduler() throws InterruptedException, ExecutionException {
+        FocessScheduler focessScheduler = new FocessScheduler("Test");
+        Task task0 = focessScheduler.run(() -> {
+            System.out.println(1);
+        }, Duration.ofSeconds(9));
+        Task task = focessScheduler.run(() -> {
+            System.out.println(10);
+        }, Duration.ofSeconds(3));
+        Thread.sleep(4000);
+        assertTrue(task.isFinished());
+        assertTrue(task0.cancel(true));
+        assertTrue(task0.isCancelled());
+        long current = System.currentTimeMillis();
+        Task task1 = focessScheduler.run(() -> {
+            System.out.println(11);
+        }, Duration.ofSeconds(3));
+        assertTimeoutPreemptively(Duration.ofSeconds(4), () -> {
+            task1.join();
+            assertTrue(System.currentTimeMillis() - current > 3000);
+            System.out.println(System.currentTimeMillis() - current );
+        });
+        focessScheduler.close();
+    }
 }
