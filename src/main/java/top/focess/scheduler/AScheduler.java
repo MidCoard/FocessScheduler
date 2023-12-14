@@ -167,7 +167,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public void cancelAll() {
+    public synchronized void cancelAll() {
         this.tasks.clear();
     }
 

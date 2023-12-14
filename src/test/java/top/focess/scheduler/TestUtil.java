@@ -133,9 +133,7 @@ public class TestUtil {
             int finalI = i;
             tasks.add(scheduler.run(()->{
                 try {
-                    System.out.println("sleep " + finalI + "s");
                     sleep(1000 * (finalI));
-                    System.out.println("finish " + finalI + "s");
                 } catch (InterruptedException e) {
                     fail();
                 }

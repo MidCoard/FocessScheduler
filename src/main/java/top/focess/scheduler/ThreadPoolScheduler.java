@@ -96,11 +96,14 @@ public class ThreadPoolScheduler extends AScheduler {
         for (int i = 0; i < this.threads.size(); i++)
             if (this.threads.get(i).getName().equals(name)) {
                 this.threads.set(i, new ThreadPoolSchedulerThread(this, name));
+                synchronized (this.AVAILABLE_THREAD_LOCK) {
+                    this.AVAILABLE_THREAD_LOCK.notify();
+                }
                 break;
             }
     }
 
-    public synchronized void  rerun(final ITask task) {
+    public synchronized void rerun(final ITask task) {
         if (this.shouldStop)
             return;
         task.clear();
@@ -173,28 +176,29 @@ public class ThreadPoolScheduler extends AScheduler {
                             }
                         } else continue;
                     }
+
                     if (task.isCancelled())
                         continue;
-                    final ThreadPoolSchedulerThread thread = this.getAvailableThread();
-                    if (thread == null) {
-                        // the thread is null, so the task will be executed later
-                        synchronized (ThreadPoolScheduler.this) {
-                            ThreadPoolScheduler.this.tasks.add(task);
-                        }
-                        // the task will be executed later, but the thread is still not available,
-                        // this cycle will run many times until the thread is available,
-                        // so we use the AVAILABLE_THREAD_LOCK to wait the thread is available
-                        System.out.println("current no available thread, wait");
-                        synchronized (ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK) {
+
+                    final ThreadPoolSchedulerThread thread;
+                    synchronized (ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK) {
+                        thread = this.getAvailableThread();
+                        if (thread == null) {
+
+                            // the thread is null, so the task will be executed later
+                            synchronized (ThreadPoolScheduler.this) {
+                                ThreadPoolScheduler.this.tasks.add(task);
+                            }
+                            // the task will be executed later, but the thread is still not available,
+                            // this cycle will run many times until the thread is available,
+                            // so we use the AVAILABLE_THREAD_LOCK to wait the thread is available
                             ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK.wait();
-                            System.out.println("current thread is available, continue");
+                            // because there may be many new tasks in the queue and a new state for this task,
+                            // we back to the beginning of the cycle to check the new state of this task
+                            continue;
                         }
-                        // because there may be many new tasks in the queue and a new state for this task,
-                        // we back to the beginning of the cycle to check the new state of this task
-                        continue;
                     }
                     ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
-                    System.out.println("Run a task: " + task.getTask().getName());
                     thread.startTask(task.getTask());
                 } catch (final Exception e) {
                     e.printStackTrace();

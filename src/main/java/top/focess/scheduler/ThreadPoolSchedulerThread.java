@@ -8,7 +8,7 @@ public class ThreadPoolSchedulerThread extends Thread {
     private final ThreadPoolScheduler scheduler;
     private final String name;
 
-    private boolean available;
+    private boolean available = true;
     @Nullable
     private ITask task;
     private boolean shouldStop;
@@ -34,11 +34,6 @@ public class ThreadPoolSchedulerThread extends Thread {
         });
         this.setDaemon(true);
         this.start();
-        synchronized (this.scheduler.AVAILABLE_THREAD_LOCK) {
-            this.available = true;
-            System.out.println("I am available");
-            this.scheduler.AVAILABLE_THREAD_LOCK.notify();
-        }
     }
 
     @Override
@@ -48,7 +43,8 @@ public class ThreadPoolSchedulerThread extends Thread {
                 synchronized (this) {
                     if (this.shouldStop)
                         break;
-                    this.wait();
+                    if (this.available)
+                        this.wait();
                     // task == null -> run once and stop -> close
                     // task != null -> run once and wait -> startTask
                 }
@@ -76,9 +72,7 @@ public class ThreadPoolSchedulerThread extends Thread {
     }
 
     public boolean isAvailable() {
-        synchronized (this.scheduler.AVAILABLE_THREAD_LOCK) {
-            return this.available;
-        }
+        return this.available;
     }
 
     public synchronized void startTask(final ITask task) {
