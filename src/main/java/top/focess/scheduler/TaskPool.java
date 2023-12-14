@@ -3,6 +3,7 @@ package top.focess.scheduler;
 import com.google.common.collect.Sets;
 
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 public abstract class TaskPool {
 
@@ -24,7 +25,7 @@ public abstract class TaskPool {
 		this.tasks.add(task);
 	}
 
-	public void join() {
+	public void join() throws ExecutionException, InterruptedException {
 		while(!this.isFinished);
 	}
 

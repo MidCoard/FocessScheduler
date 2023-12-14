@@ -100,7 +100,7 @@ public class FocessScheduler extends AScheduler {
                     this.task.getTask().startRun();
                     try {
                         this.task.getTask().run();
-                    } catch (final Exception e) {
+                    } catch (final Throwable e) {
                         this.task.getTask().setException(new ExecutionException(e));
                     }
                     this.task.getTask().endRun();

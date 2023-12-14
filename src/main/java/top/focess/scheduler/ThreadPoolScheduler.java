@@ -194,6 +194,7 @@ public class ThreadPoolScheduler extends AScheduler {
                         continue;
                     }
                     ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
+                    System.out.println("Run a task: " + task.getTask().getName());
                     thread.startTask(task.getTask());
                 } catch (final Exception e) {
                     e.printStackTrace();
