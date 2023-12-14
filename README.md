@@ -11,7 +11,7 @@ See  ```Executors``` in the java package ```java.util.concurrent```
 <dependency>
     <groupId>top.focess</groupId>
     <artifactId>focess-scheduler</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 
