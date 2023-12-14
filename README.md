@@ -18,5 +18,5 @@ See  ```Executors``` in the java package ```java.util.concurrent```
 Gradle:
 
 ```gradle
-implementation 'top.focess:focess-scheduler:1.2.0'
+implementation 'top.focess:focess-scheduler:1.2.1'
 ```
