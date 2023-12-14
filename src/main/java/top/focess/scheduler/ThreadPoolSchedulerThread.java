@@ -8,7 +8,7 @@ public class ThreadPoolSchedulerThread extends Thread {
     private final ThreadPoolScheduler scheduler;
     private final String name;
 
-    private boolean isAvailable = true;
+    private boolean available;
     @Nullable
     private ITask task;
     private boolean shouldStop;
@@ -34,6 +34,11 @@ public class ThreadPoolSchedulerThread extends Thread {
         });
         this.setDaemon(true);
         this.start();
+        synchronized (this.scheduler.AVAILABLE_THREAD_LOCK) {
+            this.available = true;
+            System.out.println("I am available");
+            this.scheduler.AVAILABLE_THREAD_LOCK.notify();
+        }
     }
 
     @Override
@@ -43,8 +48,9 @@ public class ThreadPoolSchedulerThread extends Thread {
                 synchronized (this) {
                     if (this.shouldStop)
                         break;
-                    if (this.isAvailable)
-                        this.wait();
+                    this.wait();
+                    // task == null -> run once and stop -> close
+                    // task != null -> run once and wait -> startTask
                 }
                 if (this.task != null) {
                     this.task.startRun();
@@ -58,8 +64,11 @@ public class ThreadPoolSchedulerThread extends Thread {
                     if (this.task.isPeriod() && !this.task.isCancelled())
                         this.scheduler.rerun(this.task);
                     this.task = null;
+                    synchronized (this.scheduler.AVAILABLE_THREAD_LOCK) {
+                        this.available = true;
+                        this.scheduler.AVAILABLE_THREAD_LOCK.notify();
+                    }
                 }
-                this.isAvailable = true;
             } catch (final Exception e) {
                 e.printStackTrace();
             }
@@ -67,24 +76,28 @@ public class ThreadPoolSchedulerThread extends Thread {
     }
 
     public boolean isAvailable() {
-        return this.isAvailable;
+        synchronized (this.scheduler.AVAILABLE_THREAD_LOCK) {
+            return this.available;
+        }
     }
 
     public synchronized void startTask(final ITask task) {
-        this.isAvailable = false;
         this.task = task;
+        this.available = false;
         this.notify();
     }
 
     public synchronized void close() {
         this.shouldStop = true;
-        this.isAvailable = false;
         this.notify();
+        // if the thread is waiting, it will be notified and stop, and task will be null
+        // if the thread is running, it will stop after the task is finished, and task will be null
     }
 
     public void closeNow() {
         this.close();
         this.stop();
+        this.task = null;
     }
 
     public void cancel() {

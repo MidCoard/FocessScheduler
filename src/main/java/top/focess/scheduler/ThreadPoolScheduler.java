@@ -11,11 +11,13 @@ import java.util.UUID;
 
 public class ThreadPoolScheduler extends AScheduler {
 
-    final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap();
+    final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap(); // can be opt to Non-Concurrent, use synchronized
     private final List<ThreadPoolSchedulerThread> threads = Lists.newArrayList();
     private final boolean immediate;
     private final boolean isDaemon;
     private int currentThread;
+
+    protected final Object AVAILABLE_THREAD_LOCK = new Object();
 
     /**
      * The uncaught exception handler
@@ -98,7 +100,7 @@ public class ThreadPoolScheduler extends AScheduler {
             }
     }
 
-    public synchronized void rerun(final ITask task) {
+    public synchronized void  rerun(final ITask task) {
         if (this.shouldStop)
             return;
         task.clear();
@@ -113,6 +115,12 @@ public class ThreadPoolScheduler extends AScheduler {
 
     public void setThreadUncaughtExceptionHandler(final Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
+    }
+
+    private void wait0(long timeout) throws InterruptedException {
+        if (timeout <= 0)
+            return;
+        this.wait(timeout);
     }
 
     private class SchedulerThread extends Thread {
@@ -148,28 +156,45 @@ public class ThreadPoolScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
+                    final ComparableTask task;
                     synchronized (ThreadPoolScheduler.this) {
                         if (ThreadPoolScheduler.this.shouldStop)
                             break;
                         if (ThreadPoolScheduler.this.tasks.isEmpty())
                             ThreadPoolScheduler.this.wait();
-                    }
-                    final ComparableTask task = ThreadPoolScheduler.this.tasks.peek();
-                    if (task != null)
-                        synchronized (task.getTask()) {
-                            if (task.isCancelled()) {
-                                ThreadPoolScheduler.this.tasks.poll();
+                        task = ThreadPoolScheduler.this.tasks.poll();
+                        // if task is null, means the scheduler is closed
+                        if (task!= null && !task.isCancelled()) {
+                            ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
+                            final ComparableTask peek = ThreadPoolScheduler.this.tasks.peek();
+                            if (peek != null && peek.getTime() < task.getTime()) {
+                                ThreadPoolScheduler.this.tasks.add(task);
                                 continue;
                             }
-                            if (task.getTime() <= System.currentTimeMillis()) {
-                                final ThreadPoolSchedulerThread thread = this.getAvailableThread();
-                                if (thread == null)
-                                    continue;
-                                ThreadPoolScheduler.this.tasks.poll();
-                                ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
-                                thread.startTask(task.getTask());
-                            }
+                        } else continue;
+                    }
+                    if (task.isCancelled())
+                        continue;
+                    final ThreadPoolSchedulerThread thread = this.getAvailableThread();
+                    if (thread == null) {
+                        // the thread is null, so the task will be executed later
+                        synchronized (ThreadPoolScheduler.this) {
+                            ThreadPoolScheduler.this.tasks.add(task);
                         }
+                        // the task will be executed later, but the thread is still not available,
+                        // this cycle will run many times until the thread is available,
+                        // so we use the AVAILABLE_THREAD_LOCK to wait the thread is available
+                        System.out.println("current no available thread, wait");
+                        synchronized (ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK) {
+                            ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK.wait();
+                            System.out.println("current thread is available, continue");
+                        }
+                        // because there may be many new tasks in the queue and a new state for this task,
+                        // we back to the beginning of the cycle to check the new state of this task
+                        continue;
+                    }
+                    ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
+                    thread.startTask(task.getTask());
                 } catch (final Exception e) {
                     e.printStackTrace();
                 }

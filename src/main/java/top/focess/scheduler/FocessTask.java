@@ -10,12 +10,10 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class FocessTask implements ITask {
 
-    static final Scheduler DEFAULT_SCHEDULER = new ThreadPoolScheduler(7, false, "FocessTask",true);
     private final Runnable runnable;
     private final Scheduler scheduler;
     private final String name;
@@ -175,6 +173,12 @@ public class FocessTask implements ITask {
             throw this.exception;
     }
 
+    private void wait0(final long timeout) throws InterruptedException {
+        if (timeout <= 0)
+            return;
+        this.wait(timeout);
+    }
+
     @Override
     public synchronized void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
         if (this.exception != null)
@@ -183,25 +187,13 @@ public class FocessTask implements ITask {
             return;
         if (this.isCancelled())
             throw new CancellationException("Task is cancelled");
-        final AtomicBoolean out = new AtomicBoolean(false);
-        final Task task = DEFAULT_SCHEDULER.run(() -> {
-            out.set(true);
-            synchronized (FocessTask.this) {
-                FocessTask.this.notifyAll();
-            }
-        }, Duration.ofMillis(unit.toMillis(timeout)));
-        while (true) {
-            this.wait();
-            if (this.isCancelled() || this.isFinished()) {
-                // because of this task is finished or cancelled, even if the cancellation task cannot be cancelled (means it has already run), this task will be finished.
-                // So ignore its return value.
-                task.cancel();
-                break;
-            }
-            if (out.get())
-                throw new TimeoutException();
-        }
-        this.join();
+        this.wait0(unit.toMillis(timeout));
+        if (this.isCancelled())
+            throw new CancellationException("Task is cancelled");
+        if (this.exception != null)
+            throw this.exception;
+        if (!this.isFinished())
+            throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
     }
 
     @Override

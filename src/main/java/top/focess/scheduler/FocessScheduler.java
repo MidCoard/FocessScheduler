@@ -50,6 +50,12 @@ public class FocessScheduler extends AScheduler {
         this.thread.stop();
     }
 
+    private void wait0(long timeout) throws InterruptedException {
+        if (timeout <= 0)
+            return;
+        this.wait(timeout);
+    }
+
     private class SchedulerThread extends Thread {
 
         @Nullable
@@ -78,35 +84,38 @@ public class FocessScheduler extends AScheduler {
                             break;
                         if (FocessScheduler.this.tasks.isEmpty())
                             FocessScheduler.this.wait();
-                    }
-                    this.task = FocessScheduler.this.tasks.peek();
-                    if (this.task != null) {
-                        synchronized (this.task.getTask()) {
-                            if (this.task.isCancelled()) {
-                                FocessScheduler.this.tasks.poll();
+                        this.task = FocessScheduler.this.tasks.poll();
+                        // if task is null, means the scheduler is closed
+                        if (this.task != null && !this.task.isCancelled()) {
+                            FocessScheduler.this.wait0(this.task.getTime() - System.currentTimeMillis());
+                            final ComparableTask task = FocessScheduler.this.tasks.peek();
+                            if (task != null && task.getTime() < this.task.getTime()) {
+                                FocessScheduler.this.tasks.add(this.task);
                                 continue;
                             }
-                            if (this.task.getTime() <= System.currentTimeMillis()) {
-                                FocessScheduler.this.tasks.poll();
-                                this.task.getTask().startRun();
-                            }
-                        }
-                        if (this.task.getTask().isRunning()) {
-                            try {
-                                this.task.getTask().run();
-                            } catch (final Exception e) {
-                                this.task.getTask().setException(new ExecutionException(e));
-                            }
-                            this.task.getTask().endRun();
-                            if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
-                                if (shouldStop)
-                                    return;
-                                this.task.getTask().clear();
-                                FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
-                            }
+                        } else continue;
+                    }
+                    if (this.task.isCancelled())
+                        continue;
+                    this.task.getTask().startRun();
+                    try {
+                        this.task.getTask().run();
+                    } catch (final Exception e) {
+                        this.task.getTask().setException(new ExecutionException(e));
+                    }
+                    this.task.getTask().endRun();
+                    if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
+                        // equivalent to the AScheduler#runTimer method (first check whether the scheduler is closed)
+                        if (FocessScheduler.this.shouldStop) {
                             this.task = null;
+                            return;
+                        }
+                        this.task.getTask().clear();
+                        synchronized (FocessScheduler.this) {
+                            FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
                         }
                     }
+                    this.task = null;
                 } catch (final Exception e) {
                     e.printStackTrace();
                 }

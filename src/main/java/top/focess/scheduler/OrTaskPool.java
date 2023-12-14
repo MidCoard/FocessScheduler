@@ -9,6 +9,10 @@ public class OrTaskPool extends TaskPool {
 	public synchronized void finishTask(final Task task) {
 		if (this.isFinished)
 			return;
+		for (final Task task1 : this.tasks)
+			try {
+				task1.cancel(true);
+			} catch (final UnsupportedOperationException ignored) {}
 		if (this.runnable != null)
 			this.scheduler.run(this.runnable);
 		this.isFinished = true;

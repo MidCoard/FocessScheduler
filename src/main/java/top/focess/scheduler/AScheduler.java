@@ -26,7 +26,7 @@ public abstract class AScheduler implements Scheduler {
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
-    protected final Queue<ComparableTask> tasks = Queues.newPriorityBlockingQueue();
+    protected final Queue<ComparableTask> tasks = Queues.newPriorityQueue();
 
     protected volatile boolean shouldStop;
 
@@ -34,12 +34,12 @@ public abstract class AScheduler implements Scheduler {
 
     public AScheduler(final String name) {
         this.name = name;
-        SCHEDULER_LIST.add(this);
+        AScheduler.SCHEDULER_LIST.add(this);
     }
 
     @Override
     public void close() {
-        SCHEDULER_LIST.remove(this);
+        AScheduler.SCHEDULER_LIST.remove(this);
     }
 
     /**
@@ -48,7 +48,7 @@ public abstract class AScheduler implements Scheduler {
      */
     @Contract(pure = true)
     public static @NotNull @UnmodifiableView List<Scheduler> getSchedulers() {
-        return Collections.unmodifiableList(SCHEDULER_LIST);
+        return Collections.unmodifiableList(AScheduler.SCHEDULER_LIST);
     }
 
     @Override
@@ -123,7 +123,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public synchronized  <V> Callback<V> submit(Callable<V> callable, Duration delay, String name, Function<ExecutionException, V> handler) {
+    public synchronized  <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name, final Function<ExecutionException, V> handler) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this, name, handler);
@@ -133,7 +133,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public synchronized Task run(Runnable runnable, Duration delay, String name, Consumer<ExecutionException> handler) {
+    public synchronized Task run(final Runnable runnable, final Duration delay, final String name, final Consumer<ExecutionException> handler) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this, name, handler);
@@ -143,7 +143,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public synchronized Task runTimer(Runnable runnable, Duration delay, Duration period, String name, Consumer<ExecutionException> handler) {
+    public synchronized Task runTimer(final Runnable runnable, final Duration delay, final Duration period, final String name, final Consumer<ExecutionException> handler) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, period, this, name, handler);
