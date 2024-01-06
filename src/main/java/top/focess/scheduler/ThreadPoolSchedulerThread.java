@@ -49,7 +49,6 @@ public class ThreadPoolSchedulerThread extends Thread {
                     // task != null -> run once and wait -> startTask
                 }
                 if (this.task != null) {
-                    this.task.startRun();
                     try {
                         this.task.run();
                     } catch (final Exception e) {
@@ -77,6 +76,7 @@ public class ThreadPoolSchedulerThread extends Thread {
 
     public synchronized void startTask(final ITask task) {
         this.task = task;
+        this.task.startRun();
         this.available = false;
         this.notify();
     }

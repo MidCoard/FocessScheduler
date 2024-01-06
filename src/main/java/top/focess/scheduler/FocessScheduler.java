@@ -88,6 +88,8 @@ public class FocessScheduler extends AScheduler {
                         // if task is null, means the scheduler is closed
                         if (this.task != null && !this.task.isCancelled()) {
                             FocessScheduler.this.wait0(this.task.getTime() - System.currentTimeMillis());
+                            if (FocessScheduler.this.shouldStop)
+                                break;
                             final ComparableTask task = FocessScheduler.this.tasks.peek();
                             if (task != null && task.getTime() < this.task.getTime()) {
                                 FocessScheduler.this.tasks.add(this.task);
@@ -95,9 +97,11 @@ public class FocessScheduler extends AScheduler {
                             }
                         } else continue;
                     }
-                    if (this.task.isCancelled())
-                        continue;
-                    this.task.getTask().startRun();
+                    synchronized (this.task.getTask()) {
+                        if (this.task.isCancelled())
+                            continue;
+                        this.task.getTask().startRun();
+                    }
                     try {
                         this.task.getTask().run();
                     } catch (final Throwable e) {

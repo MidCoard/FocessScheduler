@@ -169,6 +169,8 @@ public class ThreadPoolScheduler extends AScheduler {
                         // if task is null, means the scheduler is closed
                         if (task!= null && !task.isCancelled()) {
                             ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
+                            if (ThreadPoolScheduler.this.shouldStop)
+                                break;
                             final ComparableTask peek = ThreadPoolScheduler.this.tasks.peek();
                             if (peek != null && peek.getTime() < task.getTime()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
@@ -176,9 +178,6 @@ public class ThreadPoolScheduler extends AScheduler {
                             }
                         } else continue;
                     }
-
-                    if (task.isCancelled())
-                        continue;
 
                     final ThreadPoolSchedulerThread thread;
                     synchronized (ThreadPoolScheduler.this.AVAILABLE_THREAD_LOCK) {
@@ -198,8 +197,12 @@ public class ThreadPoolScheduler extends AScheduler {
                             continue;
                         }
                     }
-                    ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
-                    thread.startTask(task.getTask());
+                    synchronized (task.getTask()) {
+                        if (task.isCancelled())
+                            continue;
+                        ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
+                        thread.startTask(task.getTask());
+                    }
                 } catch (final Exception e) {
                     e.printStackTrace();
                 }
