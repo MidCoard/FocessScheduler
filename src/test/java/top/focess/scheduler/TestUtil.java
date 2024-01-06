@@ -214,4 +214,29 @@ public class TestUtil {
         });
         focessScheduler.close();
     }
+
+    @RepeatedTest(5)
+    void testScheduler5() {
+        Scheduler scheduler = new FocessScheduler("test-5");
+        AtomicInteger atomicInteger = new AtomicInteger(0);
+        Task task = scheduler.runTimer(()->{
+            atomicInteger.incrementAndGet();
+            throw new NullPointerException();
+        }, Duration.ofSeconds(0), Duration.ofSeconds(1),"test");
+        try {
+            sleep(3000);
+        } catch (InterruptedException e) {
+            fail();
+        }
+        assertTrue(task.isPeriod());
+        task.cancel();
+        try {
+            sleep(500);
+        } catch (InterruptedException e) {
+            fail();
+        }
+        assertTrue(task.isCancelled());
+        assertNotEquals(1, atomicInteger.get());
+        scheduler.close();
+    }
 }
