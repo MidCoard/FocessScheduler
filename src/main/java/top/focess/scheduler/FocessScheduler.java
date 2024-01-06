@@ -50,7 +50,7 @@ public class FocessScheduler extends AScheduler {
         this.thread.stop();
     }
 
-    private void wait0(long timeout) throws InterruptedException {
+    private synchronized void wait0(long timeout) throws InterruptedException {
         if (timeout <= 0)
             return;
         this.wait(timeout);
@@ -88,8 +88,10 @@ public class FocessScheduler extends AScheduler {
                         // if task is null, means the scheduler is closed
                         if (this.task != null && !this.task.isCancelled()) {
                             FocessScheduler.this.wait0(this.task.getTime() - System.currentTimeMillis());
-                            if (FocessScheduler.this.shouldStop)
-                                break;
+                            if (this.task.getTime() > System.currentTimeMillis()) {
+                                FocessScheduler.this.tasks.add(this.task);
+                                continue;
+                            }
                             final ComparableTask task = FocessScheduler.this.tasks.peek();
                             if (task != null && task.getTime() < this.task.getTime()) {
                                 FocessScheduler.this.tasks.add(this.task);
