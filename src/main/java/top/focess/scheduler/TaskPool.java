@@ -24,6 +24,7 @@ public abstract class TaskPool {
 	protected final Set<Task> tasks = Sets.newHashSet();
 
 	protected volatile boolean isFinished;
+	protected Task task;
 
 	public TaskPool(final Scheduler scheduler, final Runnable runnable) {
 		this.scheduler = scheduler;
@@ -48,6 +49,8 @@ public abstract class TaskPool {
 	public synchronized void join() throws ExecutionException, InterruptedException {
 		while (!this.isFinished)
 			this.wait();
+		if (this.task != null)
+			this.task.join();
 	}
 
 	public synchronized void removeTask(final Task task) {

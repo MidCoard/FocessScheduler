@@ -186,6 +186,16 @@ public abstract class AScheduler implements Scheduler {
     }
 
     /**
+     * Wait on this scheduler's monitor for at most {@code timeout} milliseconds.
+     * A non-positive timeout is a no-op.
+     */
+    protected synchronized void wait0(final long timeout) throws InterruptedException {
+        if (timeout <= 0)
+            return;
+        this.wait(timeout);
+    }
+
+    /**
      * Best-effort cooperative interruption for a running task.
      * Implementations should interrupt only when the given task is currently executing.
      */

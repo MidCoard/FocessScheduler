@@ -8,7 +8,7 @@ import top.focess.scheduler.Task;
  * Task pools are designed for one-off tasks that complete and trigger a final callback.
  * Period tasks cycle indefinitely and do not have a final "completion" event.
  */
-public class PeriodTaskException extends IllegalArgumentException {
+public class PeriodTaskException extends IllegalStateException {
 
     /**
      * Constructs a PeriodTaskException

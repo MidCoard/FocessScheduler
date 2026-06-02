@@ -120,12 +120,6 @@ public class ThreadPoolScheduler extends AScheduler {
             thread.interrupt();
     }
 
-    private synchronized void wait0(long timeout) throws InterruptedException {
-        if (timeout <= 0)
-            return;
-        this.wait(timeout);
-    }
-
     private class SchedulerThread extends Thread {
 
         public SchedulerThread(final String name) {
@@ -167,7 +161,8 @@ public class ThreadPoolScheduler extends AScheduler {
                         task = ThreadPoolScheduler.this.tasks.poll();
                         // if task is null, means the scheduler is closed
                         if (task != null && !task.isCancelled()) {
-                            ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
+                            final long now = System.currentTimeMillis();
+                            ThreadPoolScheduler.this.wait0(task.getTime() - now);
                             if (task.getTime() > System.currentTimeMillis()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
                                 continue;

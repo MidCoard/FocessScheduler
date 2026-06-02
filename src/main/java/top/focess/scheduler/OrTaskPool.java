@@ -7,12 +7,10 @@ import java.util.concurrent.ExecutionException;
 /**
  * A task pool that completes when ANY task has finished.
  * <p>
- * When the first task finishes, all other pending tasks are cancelled, the optional callback
- * is scheduled, and this pool is marked finished.
+ * When the first task finishes, the optional callback is scheduled and this pool is marked
+ * finished. Other tasks in the pool continue to run to completion.
  */
 public class OrTaskPool extends TaskPool {
-
-	private Task task;
 
 	public OrTaskPool(final Scheduler scheduler, final Runnable runnable) {
 		super(scheduler, runnable);
@@ -31,10 +29,4 @@ public class OrTaskPool extends TaskPool {
 		this.markFinished();
 	}
 
-	@Override
-	public void join() throws ExecutionException, InterruptedException {
-		super.join();
-		if (this.task != null)
-			this.task.join();
-	}
 }

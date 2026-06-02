@@ -36,9 +36,8 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     protected ExecutionException exception;
     private Duration period;
-    private boolean isPeriod;
     private Consumer<ExecutionException> handler;
-    private final List<TaskPool> taskPools = Lists.newCopyOnWriteArrayList();
+    private List<TaskPool> taskPools;
 
     FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler, final String name) {
         this.runnable = runnable;
@@ -57,7 +56,6 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler) {
         this(runnable, scheduler);
-        this.isPeriod = true;
         this.period = period;
     }
 
@@ -67,7 +65,6 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
         this(runnable, scheduler, name);
-        this.isPeriod = true;
         this.period = period;
         this.handler = handler;
     }
@@ -75,7 +72,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     @Override
     public synchronized void clear() {
         // Only periodic tasks are reusable; cancellation and terminal finish stay terminal.
-        if (this.isPeriod && this.state == TaskState.FINISHED) {
+        if (this.period != null && this.state == TaskState.FINISHED) {
             this.state = TaskState.PENDING;
         }
         this.exception = null;
@@ -105,9 +102,11 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
             this.state = TaskState.FINISHED;
         }
         this.notifyAll();
-        for (final TaskPool taskPool : this.taskPools) {
-            taskPool.removeTask(this);
-            taskPool.finishTask(this);
+        if (this.taskPools != null) {
+            for (final TaskPool taskPool : this.taskPools) {
+                taskPool.removeTask(this);
+                taskPool.finishTask(this);
+            }
         }
     }
 
@@ -120,19 +119,22 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     @Override
     public synchronized void addTaskPool(final TaskPool taskPool) {
+        if (this.taskPools == null)
+            this.taskPools = Lists.newCopyOnWriteArrayList();
         this.taskPools.add(taskPool);
     }
 
     @Override
     public synchronized void removeTaskPool(final TaskPool taskPool) {
-        this.taskPools.remove(taskPool);
+        if (this.taskPools != null)
+            this.taskPools.remove(taskPool);
     }
 
     @Override
     public synchronized boolean cancel(final boolean mayInterruptIfRunning) {
         if (this.state == TaskState.CANCELLED || this.state == TaskState.FINISHED)
             return false;
-        if (!mayInterruptIfRunning && this.state == TaskState.RUNNING && !this.isPeriod)
+        if (!mayInterruptIfRunning && this.state == TaskState.RUNNING && this.period == null)
             return false;
         if (mayInterruptIfRunning && this.state == TaskState.RUNNING)
             scheduler.interruptTaskIfRunning(this);
@@ -158,12 +160,12 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     @Override
     public boolean isPeriod() {
-        return this.isPeriod;
+        return this.period != null;
     }
 
     @Override
     public synchronized boolean isFinished() {
-        return !this.isPeriod && this.state == TaskState.FINISHED;
+        return this.period == null && this.state == TaskState.FINISHED;
     }
 
     @Override

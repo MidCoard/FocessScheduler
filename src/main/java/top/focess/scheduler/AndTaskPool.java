@@ -10,8 +10,6 @@ import java.util.concurrent.ExecutionException;
  */
 public class AndTaskPool extends TaskPool {
 
-	private Task task;
-
 	public AndTaskPool(final Scheduler scheduler, final Runnable runnable) {
 		super(scheduler, runnable);
 	}
@@ -31,10 +29,4 @@ public class AndTaskPool extends TaskPool {
 		this.markFinished();
 	}
 
-	@Override
-	public synchronized void join() throws ExecutionException, InterruptedException {
-		super.join();
-		if (this.task != null)
-			this.task.join();
-	}
 }
