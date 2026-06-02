@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -62,7 +63,7 @@ public class TestUtil {
         }, Duration.ofSeconds(1));
         assertTrue(task3.cancel());
         assertTrue(task3.isCancelled());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -75,7 +76,10 @@ public class TestUtil {
                 try {
                     sleep(3000);
                 } catch (InterruptedException e) {
-                    fail();
+                    // cancel(true) now interrupts the running task instead of using the
+                    // unsafe Thread#stop(); treat the interruption as the cancellation signal
+                    Thread.currentThread().interrupt();
+                    return;
                 }
                 System.out.println(finalI);
             }));
@@ -98,7 +102,7 @@ public class TestUtil {
         } catch (InterruptedException e) {
             fail();
         }
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -146,7 +150,7 @@ public class TestUtil {
         for (Task task2 : tasks)
             assertDoesNotThrow(()->task2.join());
         assertEquals(5, count.get());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @Test
@@ -159,7 +163,7 @@ public class TestUtil {
         }
         for (Task task : tasks)
             assertDoesNotThrow(()->task.join());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @Test
@@ -212,7 +216,36 @@ public class TestUtil {
             assertTrue(System.currentTimeMillis() - current > 3000);
             System.out.println(System.currentTimeMillis() - current );
         });
-        focessScheduler.close();
+        focessScheduler.shutdown();
+    }
+
+    @Test
+    void testFocessSchedulerCancelRunning() throws InterruptedException {
+        FocessScheduler focessScheduler = new FocessScheduler("cancel-running");
+        AtomicBoolean interrupted = new AtomicBoolean(false);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        Task task = focessScheduler.run(() -> {
+            try {
+                sleep(5000);
+                completed.set(true);
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+        });
+        sleep(1000);
+        assertTrue(task.isRunning());
+        assertTrue(task.cancel(true));
+        sleep(500);
+        assertTrue(task.isCancelled());
+        assertTrue(interrupted.get());
+        assertFalse(completed.get());
+        // the scheduler thread must survive the interrupt and keep running later tasks
+        AtomicBoolean ran = new AtomicBoolean(false);
+        Task after = focessScheduler.run(() -> ran.set(true));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> after.join());
+        assertTrue(ran.get());
+        focessScheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -237,6 +270,215 @@ public class TestUtil {
         }
         assertTrue(task.isCancelled());
         assertNotEquals(1, atomicInteger.get());
-        scheduler.close();
+        scheduler.shutdown();
+    }
+
+    private static void sleepQuietly(final long millis) {
+        try {
+            sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("the controlling thread was unexpectedly interrupted");
+        }
+    }
+
+    @Test
+    @DisplayName("cancel(false) on a pending task removes it before it runs")
+    void testCancelPendingTask() {
+        final FocessScheduler scheduler = new FocessScheduler("cancel-pending");
+        final AtomicBoolean ran = new AtomicBoolean(false);
+        final Task task = scheduler.run(() -> ran.set(true), Duration.ofSeconds(2));
+        // a task that has not started yet can always be cancelled, even without interruption
+        assertTrue(task.cancel());
+        assertTrue(task.isCancelled());
+        // cancelling an already-cancelled task is a no-op
+        assertFalse(task.cancel());
+        assertFalse(task.cancel(true));
+        sleepQuietly(2500);
+        assertFalse(ran.get());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("cancelling a finished task returns false and does not mark it cancelled")
+    void testCancelFinishedTask() throws Exception {
+        final FocessScheduler scheduler = new FocessScheduler("cancel-finished");
+        final Task task = scheduler.run(() -> {});
+        task.join();
+        assertTrue(task.isFinished());
+        assertFalse(task.cancel());
+        assertFalse(task.cancel(true));
+        assertFalse(task.isCancelled());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("cancel(false) cannot stop a running non-period task; it runs to completion")
+    void testCancelRunningWithoutInterrupt() {
+        final FocessScheduler scheduler = new FocessScheduler("cancel-false");
+        final AtomicBoolean completed = new AtomicBoolean(false);
+        final Task task = scheduler.run(() -> {
+            sleepQuietly(2000);
+            completed.set(true);
+        });
+        sleepQuietly(700);
+        assertTrue(task.isRunning());
+        // cancel(false) must not interrupt a running non-period task
+        assertFalse(task.cancel());
+        assertFalse(task.isCancelled());
+        sleepQuietly(2000);
+        assertTrue(completed.get());
+        assertTrue(task.isFinished());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("join() on a cancelled task throws CancellationException")
+    void testJoinCancelledThrows() {
+        final FocessScheduler scheduler = new FocessScheduler("join-cancel");
+        final Task task = scheduler.run(() -> {}, Duration.ofSeconds(3));
+        assertTrue(task.cancel());
+        assertThrows(CancellationException.class, task::join);
+        scheduler.shutdown();
+    }
+
+    @RepeatedTest(3)
+    @DisplayName("ThreadPoolScheduler cancel(true) interrupts only the targeted running task")
+    void testThreadPoolCancelRunningIsolated() {
+        final ThreadPoolScheduler scheduler = new ThreadPoolScheduler(4, false, "cancel-isolated");
+        final AtomicBoolean firstInterrupted = new AtomicBoolean(false);
+        final AtomicBoolean secondInterrupted = new AtomicBoolean(false);
+        final AtomicBoolean secondCompleted = new AtomicBoolean(false);
+        final Task first = scheduler.run(() -> {
+            try {
+                sleep(3000);
+            } catch (final InterruptedException e) {
+                firstInterrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+        });
+        final Task second = scheduler.run(() -> {
+            try {
+                sleep(1500);
+                secondCompleted.set(true);
+            } catch (final InterruptedException e) {
+                secondInterrupted.set(true);
+            }
+        });
+        sleepQuietly(700);
+        assertTrue(first.isRunning());
+        assertTrue(second.isRunning());
+        assertTrue(first.cancel(true));
+        sleepQuietly(500);
+        assertTrue(first.isCancelled());
+        assertTrue(firstInterrupted.get());
+        // the interrupt must be isolated to the first task's worker thread
+        assertFalse(second.isCancelled());
+        sleepQuietly(1500);
+        assertFalse(secondInterrupted.get());
+        assertTrue(secondCompleted.get());
+        assertTrue(second.isFinished());
+        // the pool must keep serving new tasks after a cancellation
+        final AtomicBoolean ran = new AtomicBoolean(false);
+        final Task after = scheduler.run(() -> ran.set(true));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> after.join());
+        assertTrue(ran.get());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("a running task that swallows the interrupt finishes but is still marked cancelled")
+    void testCancelRunningSwallowInterrupt() {
+        final ThreadPoolScheduler scheduler = new ThreadPoolScheduler(2, false, "swallow");
+        final AtomicBoolean sawInterrupt = new AtomicBoolean(false);
+        final AtomicBoolean completed = new AtomicBoolean(false);
+        final Task task = scheduler.run(() -> {
+            try {
+                sleep(1500);
+            } catch (final InterruptedException e) {
+                sawInterrupt.set(true);
+                // deliberately swallow the interrupt and keep working
+            }
+            sleepQuietly(500);
+            completed.set(true);
+        });
+        sleepQuietly(500);
+        assertTrue(task.isRunning());
+        assertTrue(task.cancel(true));
+        sleepQuietly(1800);
+        assertTrue(sawInterrupt.get());
+        // cooperative cancellation: a swallowed interrupt still runs to completion
+        assertTrue(completed.get());
+        // but the task is still reported as cancelled
+        assertTrue(task.isCancelled());
+        // the worker that ran the swallowing task must be reusable, without a leftover interrupt
+        final AtomicBoolean ran = new AtomicBoolean(false);
+        final Task after = scheduler.run(() -> ran.set(true));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> after.join());
+        assertTrue(ran.get());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("a cancelled interrupt does not leak into the next task on the same worker")
+    void testInterruptDoesNotLeakToNextTask() {
+        final ThreadPoolScheduler scheduler = new ThreadPoolScheduler(1, false, "no-leak");
+        final AtomicBoolean firstInterrupted = new AtomicBoolean(false);
+        final Task first = scheduler.run(() -> {
+            try {
+                sleep(3000);
+            } catch (final InterruptedException e) {
+                firstInterrupted.set(true);
+                // re-assert the interrupt flag; the worker must clear it before the next task
+                Thread.currentThread().interrupt();
+            }
+        });
+        sleepQuietly(500);
+        assertTrue(first.cancel(true));
+        sleepQuietly(500);
+        assertTrue(firstInterrupted.get());
+        final AtomicBoolean secondInterrupted = new AtomicBoolean(false);
+        final AtomicBoolean secondCompleted = new AtomicBoolean(false);
+        final Task second = scheduler.run(() -> {
+            try {
+                sleep(800);
+                secondCompleted.set(true);
+            } catch (final InterruptedException e) {
+                secondInterrupted.set(true);
+            }
+        });
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> second.join());
+        assertFalse(secondInterrupted.get());
+        assertTrue(secondCompleted.get());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("FocessScheduler: cancelling a pending task does not interrupt the running one")
+    void testFocessSchedulerCancelPendingKeepsRunning() {
+        final FocessScheduler scheduler = new FocessScheduler("cancel-pending-running");
+        final AtomicBoolean firstCompleted = new AtomicBoolean(false);
+        final AtomicBoolean firstInterrupted = new AtomicBoolean(false);
+        final AtomicBoolean secondRan = new AtomicBoolean(false);
+        final Task running = scheduler.run(() -> {
+            try {
+                sleep(2000);
+                firstCompleted.set(true);
+            } catch (final InterruptedException e) {
+                firstInterrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+        });
+        final Task pending = scheduler.run(() -> secondRan.set(true), Duration.ofSeconds(5));
+        sleepQuietly(700);
+        assertTrue(running.isRunning());
+        // cancelling a not-yet-running task with interrupt must not disturb the running one
+        assertTrue(pending.cancel(true));
+        sleepQuietly(2000);
+        assertTrue(firstCompleted.get());
+        assertFalse(firstInterrupted.get());
+        assertTrue(pending.isCancelled());
+        assertFalse(secondRan.get());
+        scheduler.shutdown();
     }
 }

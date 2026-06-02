@@ -12,7 +12,7 @@ import java.util.UUID;
 public class ThreadPoolScheduler extends AScheduler {
 
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap(); // can be opt to Non-Concurrent, use synchronized
-    private final List<ThreadPoolSchedulerThread> threads = Lists.newArrayList();
+    private final List<ThreadPoolSchedulerThread> threads = Lists.newCopyOnWriteArrayList();
     private final boolean immediate;
     private final boolean isDaemon;
     private int currentThread;
@@ -66,25 +66,26 @@ public class ThreadPoolScheduler extends AScheduler {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
     @Override
-    public synchronized void close() {
-        super.close();
+    public synchronized void shutdown() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
-            thread.close();
+            thread.shutdown();
         this.notify();
     }
 
     @Override
-    public void closeNow() {
-        super.close();
+    public void shutdownNow() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
-            thread.closeNow();
+            thread.shutdownNow();
         this.notify();
     }
 
+    @Override
     public void cancel(final ITask task) {
         if (this.taskThreadMap.containsKey(task)) {
             this.taskThreadMap.get(task).cancel();
@@ -132,7 +133,7 @@ public class ThreadPoolScheduler extends AScheduler {
             super(name);
             this.setDaemon(isDaemon);
             this.setUncaughtExceptionHandler((t, e) -> {
-                ThreadPoolScheduler.this.close();
+                ThreadPoolScheduler.this.shutdown();
                 if (ThreadPoolScheduler.this.getUncaughtExceptionHandler() != null)
                     ThreadPoolScheduler.this.getUncaughtExceptionHandler().uncaughtException(t, e);
             });
@@ -167,7 +168,7 @@ public class ThreadPoolScheduler extends AScheduler {
                             ThreadPoolScheduler.this.wait();
                         task = ThreadPoolScheduler.this.tasks.poll();
                         // if task is null, means the scheduler is closed
-                        if (task!= null && !task.isCancelled()) {
+                        if (task != null && !task.isCancelled()) {
                             ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
                             if (task.getTime() > System.currentTimeMillis()) {
                                 ThreadPoolScheduler.this.tasks.add(task);

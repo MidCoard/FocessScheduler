@@ -16,7 +16,7 @@ public class AndTaskPool extends TaskPool {
 			return;
 		if (this.runnable != null)
 			this.task = this.scheduler.run(this.runnable);
-		this.isFinished = true;
+		this.markFinished();
 	}
 
 	@Override

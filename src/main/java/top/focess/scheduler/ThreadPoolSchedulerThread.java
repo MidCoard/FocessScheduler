@@ -18,7 +18,7 @@ public class ThreadPoolSchedulerThread extends Thread {
         this.scheduler = scheduler;
         this.name = name;
         this.setUncaughtExceptionHandler((t, e) -> {
-            this.close();
+            this.shutdown();
             if (this.task != null) {
                 this.task.setException(new ExecutionException(e));
                 this.task.endRun();
@@ -29,7 +29,7 @@ public class ThreadPoolSchedulerThread extends Thread {
             this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                 this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
-            if (!this.scheduler.isClosed())
+            if (!this.scheduler.isShutdown())
                 this.scheduler.recreate(this.name);
         });
         this.setDaemon(true);
@@ -54,6 +54,9 @@ public class ThreadPoolSchedulerThread extends Thread {
                     } catch (final Exception e) {
                         this.task.setException(new ExecutionException(e));
                     }
+                    // consume any pending interrupt raised by cancel()/shutdownNow() so it does
+                    // not leak into the next task this worker picks up
+                    Thread.interrupted();
                     this.task.endRun();
                     this.scheduler.taskThreadMap.remove(this.task);
                     if (this.task.isPeriod() && !this.task.isCancelled())
@@ -81,23 +84,24 @@ public class ThreadPoolSchedulerThread extends Thread {
         this.notify();
     }
 
-    public synchronized void close() {
+    public synchronized void shutdown() {
         this.shouldStop = true;
         this.notify();
         // if the thread is waiting, it will be notified and stop, and task will be null
         // if the thread is running, it will stop after the task is finished, and task will be null
     }
 
-    public void closeNow() {
-        this.close();
-        this.stop();
-        this.task = null;
+    public void shutdownNow() {
+        this.shutdown();
+        // interrupt the running task so a cooperative task can wind down instead of being
+        // killed with the unsafe Thread#stop()
+        this.interrupt();
     }
 
     public void cancel() {
-        this.stop();
-        // no need for recreate, because the stop method will throw an uncaught exception
-        // and recreate the thread will be called in the uncaught exception handler
+        // interrupt the running task instead of using the unsafe Thread#stop(); the worker
+        // observes the interrupt, finishes the current task and becomes available again
+        this.interrupt();
     }
 
 }

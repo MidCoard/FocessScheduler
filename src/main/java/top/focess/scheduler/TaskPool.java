@@ -25,14 +25,23 @@ public abstract class TaskPool {
 		this.tasks.add(task);
 	}
 
-	public void join() throws ExecutionException, InterruptedException {
-		while(!this.isFinished);
+	public synchronized void join() throws ExecutionException, InterruptedException {
+		while (!this.isFinished)
+			this.wait();
 	}
 
 	public synchronized void removeTask(final Task task) {
 		final ITask iTask = (ITask) task;
 		iTask.removeTaskPool(this);
 		this.tasks.remove(task);
+	}
+
+	/**
+	 * Mark this pool as finished and wake up any threads waiting in {@link #join()}.
+	 */
+	protected synchronized void markFinished() {
+		this.isFinished = true;
+		this.notifyAll();
 	}
 
 	public abstract void finishTask(final Task task);

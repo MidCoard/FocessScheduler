@@ -15,6 +15,12 @@ public interface Task {
 
     /**
      * Cancel this task
+     * <p>
+     * When {@code mayInterruptIfRunning} is true and the task is already running, the executing
+     * thread is interrupted (its interrupt status is set). Cancellation is therefore cooperative:
+     * a blocking call such as {@link Thread#sleep} throws {@link InterruptedException}, but a task
+     * that swallows the interrupt without reacting to it will keep running to completion. The
+     * executing thread itself is never forcibly stopped and is reused for later tasks.
      *
      * @param mayInterruptIfRunning true if cancel it without its status, false otherwise
      * @return true if it is cancelled, false it cannot be cancelled, or it is already cancelled

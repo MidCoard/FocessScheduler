@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 public abstract class AScheduler implements Scheduler {
 
-    private static final List<Scheduler> SCHEDULER_LIST = Lists.newArrayList();
+    private static final List<Scheduler> SCHEDULER_LIST = Lists.newCopyOnWriteArrayList();
     /**
      * The uncaught exception handler
      */
@@ -38,9 +38,15 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public void close() {
+    public void shutdown() {
         AScheduler.SCHEDULER_LIST.remove(this);
     }
+
+    /**
+     * Cancel a running task, attempting to interrupt the thread that executes it.
+     * @param task the task to cancel
+     */
+    public abstract void cancel(final ITask task);
 
     /**
      * Get the schedulers as list
@@ -76,7 +82,7 @@ public abstract class AScheduler implements Scheduler {
     public synchronized Task run(final Runnable runnable, final Duration delay, final String name) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, this,name);
+        final FocessTask task = new FocessTask(runnable, this, name);
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
         this.notify();
         return task;
@@ -152,7 +158,7 @@ public abstract class AScheduler implements Scheduler {
         return task;
     }
 
-    public boolean isClosed() {
+    public boolean isShutdown() {
         return this.shouldStop;
     }
 

@@ -6,7 +6,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 public class FocessScheduler extends AScheduler {
-    private final Thread thread;
+    private final SchedulerThread thread;
 
     /**
      * New a FocessScheduler with some default configuration (not daemon).
@@ -37,17 +37,32 @@ public class FocessScheduler extends AScheduler {
     }
 
     @Override
-    public synchronized void close() {
-        super.close();
+    public synchronized void shutdown() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         this.notify();
     }
 
     @Override
-    public synchronized void closeNow() {
-        this.close();
-        this.thread.stop();
+    public synchronized void shutdownNow() {
+        this.shutdown();
+        // interrupt the scheduler thread so that a blocking task (or wait) wakes up and
+        // the run loop can observe shouldStop and terminate cooperatively
+        this.thread.interrupt();
+    }
+
+    @Override
+    public void cancel(final ITask task) {
+        // FocessScheduler runs tasks one-at-a-time on its single scheduler thread, so cancelling
+        // the running task means interrupting that thread. Only interrupt when the requested task
+        // is actually the one currently executing, otherwise we could disturb an unrelated task or
+        // the scheduler's wait state. The task must cooperate by reacting to the interrupt (e.g.
+        // letting InterruptedException propagate or returning); the scheduler thread clears any
+        // leftover interrupt before picking up the next task.
+        final ComparableTask current = this.thread.task;
+        if (current != null && current.getTask() == task)
+            this.thread.interrupt();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -64,7 +79,7 @@ public class FocessScheduler extends AScheduler {
         public SchedulerThread(final String name) {
             super(name);
             this.setUncaughtExceptionHandler((t, e) -> {
-                FocessScheduler.this.close();
+                FocessScheduler.this.shutdown();
                 if (this.task != null) {
                     this.task.getTask().setException(new ExecutionException(e));
                     this.task.getTask().endRun();
@@ -79,6 +94,10 @@ public class FocessScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
+                    // Clear any leftover interrupt from a cancelled task so it does not spin the
+                    // next wait(). Shutdown does not rely on this flag (it uses shouldStop + notify),
+                    // so clearing here cannot swallow a shutdown signal.
+                    Thread.interrupted();
                     synchronized (FocessScheduler.this) {
                         if (FocessScheduler.this.shouldStop)
                             break;
@@ -108,6 +127,10 @@ public class FocessScheduler extends AScheduler {
                         this.task.getTask().run();
                     } catch (final Throwable e) {
                         this.task.getTask().setException(new ExecutionException(e));
+                    } finally {
+                        // consume any interrupt raised by cancel(true) so it does not leak into
+                        // the scheduler thread's next wait() and spin the run loop
+                        Thread.interrupted();
                     }
                     this.task.getTask().endRun();
                     if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
