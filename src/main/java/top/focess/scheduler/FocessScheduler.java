@@ -135,10 +135,12 @@ public class FocessScheduler extends AScheduler {
                             FocessScheduler.this.tasks.add(this.task);
                         }
                     }
-                    this.task = null;
+                    synchronized (FocessScheduler.this) {
+                        this.task = null;
+                    }
                 } catch (final Exception e) {
                     e.printStackTrace(System.err);
-                    break;
+                    shutdown();
                 }
             }
         }

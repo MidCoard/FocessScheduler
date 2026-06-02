@@ -36,13 +36,13 @@ public class ThreadPoolScheduler extends AScheduler {
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name,final boolean isDaemon) {
         super(name);
+        this.immediate = immediate;
+        this.isDaemon = isDaemon;
         for (int i = 0; i < poolSize; i++)
             this.threads.add(new ThreadPoolSchedulerThread(this, this.getName() + "-" + i));
         Thread thread = new SchedulerThread(this.getName());
         thread.setDaemon(isDaemon);
         thread.start();
-        this.immediate = immediate;
-        this.isDaemon = isDaemon;
     }
 
     /**
@@ -75,7 +75,7 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     @Override
-    public void shutdownNow() {
+    public synchronized void shutdownNow() {
         super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
@@ -130,7 +130,6 @@ public class ThreadPoolScheduler extends AScheduler {
 
         public SchedulerThread(final String name) {
             super(name);
-            this.setDaemon(isDaemon);
             this.setUncaughtExceptionHandler((t, e) -> {
                 ThreadPoolScheduler.this.shutdown();
                 if (ThreadPoolScheduler.this.getUncaughtExceptionHandler() != null)
@@ -207,7 +206,7 @@ public class ThreadPoolScheduler extends AScheduler {
                     }
                 } catch (final Exception e) {
                     e.printStackTrace(System.err);
-                    break;
+                    shutdown();
                 }
             }
         }
