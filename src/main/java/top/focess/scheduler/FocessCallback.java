@@ -43,7 +43,11 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     @Override
     public synchronized void setException(final ExecutionException e) {
         if (this.handler != null)
-            this.value = this.handler.apply(e);
+            try {
+                this.value = this.handler.apply(e);
+            } catch (final Exception ignored) {
+                this.exception = e;
+            }
         else this.exception = e;
     }
 

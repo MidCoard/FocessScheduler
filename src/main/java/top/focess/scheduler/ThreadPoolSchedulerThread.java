@@ -23,13 +23,11 @@ public class ThreadPoolSchedulerThread extends Thread {
                 this.task.setException(new ExecutionException(e));
                 this.task.endRun();
                 scheduler.taskThreadMap.remove(this.task);
-                if (this.task.isPeriod() && !this.task.isCancelled())
-                    this.scheduler.rerun(this.task);
             }
             this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                 this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
-            this.scheduler.recreate(this.name);
+            this.scheduler.shutdown();
         });
         this.setDaemon(true);
         this.start();
@@ -69,7 +67,7 @@ public class ThreadPoolSchedulerThread extends Thread {
                 }
             } catch (final Exception e) {
                 e.printStackTrace(System.err);
-                break;
+                shutdown();
             }
         }
     }

@@ -13,7 +13,6 @@ public class ThreadPoolScheduler extends AScheduler {
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap(); // can be opt to Non-Concurrent, use synchronized
     private final List<ThreadPoolSchedulerThread> threads = Lists.newCopyOnWriteArrayList();
     private final boolean immediate;
-    private final boolean isDaemon;
     private int currentThread;
 
     protected final Object AVAILABLE_THREAD_LOCK = new Object();
@@ -37,7 +36,6 @@ public class ThreadPoolScheduler extends AScheduler {
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name,final boolean isDaemon) {
         super(name);
         this.immediate = immediate;
-        this.isDaemon = isDaemon;
         for (int i = 0; i < poolSize; i++)
             this.threads.add(new ThreadPoolSchedulerThread(this, this.getName() + "-" + i));
         Thread thread = new SchedulerThread(this.getName());
@@ -64,6 +62,7 @@ public class ThreadPoolScheduler extends AScheduler {
     public ThreadPoolScheduler(final String prefix, final int poolSize) {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
+
     @Override
     public synchronized void shutdown() {
         super.shutdown();
@@ -82,17 +81,6 @@ public class ThreadPoolScheduler extends AScheduler {
         for (final ThreadPoolSchedulerThread thread : this.threads)
             thread.shutdownNow();
         this.notify();
-    }
-
-    void recreate(final String name) {
-        synchronized (this.AVAILABLE_THREAD_LOCK) {
-            for (int i = 0; i < this.threads.size(); i++)
-                if (this.threads.get(i).getName().equals(name)) {
-                    this.threads.set(i, new ThreadPoolSchedulerThread(this, name));
-                    this.AVAILABLE_THREAD_LOCK.notify();
-                    break;
-                }
-        }
     }
 
     synchronized void rerun(final FocessTask task) {

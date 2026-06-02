@@ -177,6 +177,8 @@ public abstract class AScheduler implements Scheduler {
 
     @Override
     public synchronized void cancelAll() {
+        for (final FocessTask task : this.tasks)
+            task.cancel(true);
         this.tasks.clear();
     }
 

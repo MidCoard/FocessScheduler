@@ -1,9 +1,5 @@
 package top.focess.scheduler;
 
-import com.google.common.collect.Lists;
-
-import java.util.concurrent.ExecutionException;
-
 /**
  * A task pool that completes when ANY task has finished.
  * <p>

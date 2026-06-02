@@ -39,6 +39,8 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     private Consumer<ExecutionException> handler;
     private List<TaskPool> taskPools;
 
+    private final Object TASK_POOL_LOCK =  new Object();
+
     FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler, final String name) {
         this.runnable = runnable;
         this.scheduler = scheduler;
@@ -97,15 +99,19 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     }
 
     @Override
-    public synchronized void endRun() {
-        if (this.state == TaskState.RUNNING) {
-            this.state = TaskState.FINISHED;
+    public void endRun() {
+        synchronized (this) {
+            if (this.state == TaskState.RUNNING) {
+                this.state = TaskState.FINISHED;
+            }
+            this.notifyAll();
         }
-        this.notifyAll();
-        if (this.taskPools != null) {
-            for (final TaskPool taskPool : this.taskPools) {
-                taskPool.removeTask(this);
-                taskPool.finishTask(this);
+        synchronized (TASK_POOL_LOCK) {
+            if (this.taskPools != null) {
+                for (final TaskPool taskPool : this.taskPools) {
+                    taskPool.removeTask(this);
+                    taskPool.finishTask(this);
+                }
             }
         }
     }
@@ -113,21 +119,29 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     @Override
     public synchronized void setException(final ExecutionException e) {
         if (this.handler != null)
-            this.handler.accept(e);
+            try {
+                this.handler.accept(e);
+            } catch (final Exception ignored) {
+                this.exception = e;
+            }
         else this.exception = e;
     }
 
     @Override
-    public synchronized void addTaskPool(final TaskPool taskPool) {
-        if (this.taskPools == null)
-            this.taskPools = Lists.newCopyOnWriteArrayList();
-        this.taskPools.add(taskPool);
+    public void addTaskPool(final TaskPool taskPool) {
+        synchronized (TASK_POOL_LOCK) {
+            if (this.taskPools == null)
+                this.taskPools = Lists.newCopyOnWriteArrayList();
+            this.taskPools.add(taskPool);
+        }
     }
 
     @Override
-    public synchronized void removeTaskPool(final TaskPool taskPool) {
-        if (this.taskPools != null)
-            this.taskPools.remove(taskPool);
+    public void removeTaskPool(final TaskPool taskPool) {
+        synchronized (TASK_POOL_LOCK) {
+            if (this.taskPools != null)
+                this.taskPools.remove(taskPool);
+        }
     }
 
     @Override
