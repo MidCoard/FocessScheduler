@@ -10,7 +10,7 @@ public class ThreadPoolSchedulerThread extends Thread {
 
     private boolean available = true;
     @Nullable
-    private ITask task;
+    private FocessTask task;
     private boolean shouldStop;
 
     public ThreadPoolSchedulerThread(final ThreadPoolScheduler scheduler, final String name) {
@@ -29,8 +29,7 @@ public class ThreadPoolSchedulerThread extends Thread {
             this.task = null;
             if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                 this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
-            if (!this.scheduler.isShutdown())
-                this.scheduler.recreate(this.name);
+            this.scheduler.recreate(this.name);
         });
         this.setDaemon(true);
         this.start();
@@ -53,10 +52,11 @@ public class ThreadPoolSchedulerThread extends Thread {
                         this.task.run();
                     } catch (final Exception e) {
                         this.task.setException(new ExecutionException(e));
+                    } finally {
+                        // consume any pending interrupt raised by cancel()/shutdownNow() so it does
+                        // not leak into the next task this worker picks up
+                        Thread.interrupted();
                     }
-                    // consume any pending interrupt raised by cancel()/shutdownNow() so it does
-                    // not leak into the next task this worker picks up
-                    Thread.interrupted();
                     this.task.endRun();
                     this.scheduler.taskThreadMap.remove(this.task);
                     if (this.task.isPeriod() && !this.task.isCancelled())
@@ -68,7 +68,8 @@ public class ThreadPoolSchedulerThread extends Thread {
                     }
                 }
             } catch (final Exception e) {
-                e.printStackTrace();
+                e.printStackTrace(System.err);
+                break;
             }
         }
     }
@@ -77,7 +78,7 @@ public class ThreadPoolSchedulerThread extends Thread {
         return this.available;
     }
 
-    public synchronized void startTask(final ITask task) {
+    synchronized void startTask(final FocessTask task) {
         this.task = task;
         this.task.startRun();
         this.available = false;
@@ -87,20 +88,12 @@ public class ThreadPoolSchedulerThread extends Thread {
     public synchronized void shutdown() {
         this.shouldStop = true;
         this.notify();
-        // if the thread is waiting, it will be notified and stop, and task will be null
-        // if the thread is running, it will stop after the task is finished, and task will be null
     }
 
     public void shutdownNow() {
         this.shutdown();
         // interrupt the running task so a cooperative task can wind down instead of being
         // killed with the unsafe Thread#stop()
-        this.interrupt();
-    }
-
-    public void cancel() {
-        // interrupt the running task instead of using the unsafe Thread#stop(); the worker
-        // observes the interrupt, finishes the current task and becomes available again
         this.interrupt();
     }
 

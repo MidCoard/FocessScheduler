@@ -84,23 +84,23 @@ public class ThreadPoolScheduler extends AScheduler {
         this.notify();
     }
 
-    public void recreate(final String name) {
-        for (int i = 0; i < this.threads.size(); i++)
-            if (this.threads.get(i).getName().equals(name)) {
-                this.threads.set(i, new ThreadPoolSchedulerThread(this, name));
-                synchronized (this.AVAILABLE_THREAD_LOCK) {
+    void recreate(final String name) {
+        synchronized (this.AVAILABLE_THREAD_LOCK) {
+            for (int i = 0; i < this.threads.size(); i++)
+                if (this.threads.get(i).getName().equals(name)) {
+                    this.threads.set(i, new ThreadPoolSchedulerThread(this, name));
                     this.AVAILABLE_THREAD_LOCK.notify();
+                    break;
                 }
-                break;
-            }
+        }
     }
 
-    public synchronized void rerun(final ITask task) {
+    synchronized void rerun(final FocessTask task) {
         if (this.shouldStop)
             return;
         task.clear();
-        ((FocessTask) task).setTime(System.currentTimeMillis() + task.getPeriod().toMillis());
-        this.tasks.add((FocessTask) task);
+        task.setTime(System.currentTimeMillis() + task.getPeriod().toMillis());
+        this.tasks.add(task);
         this.notify();
     }
 
@@ -117,7 +117,7 @@ public class ThreadPoolScheduler extends AScheduler {
     protected void interruptTaskIfRunning(final FocessTask task) {
         final ThreadPoolSchedulerThread thread = this.taskThreadMap.get(task);
         if (thread != null)
-            thread.cancel();
+            thread.interrupt();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -206,7 +206,8 @@ public class ThreadPoolScheduler extends AScheduler {
                         thread.startTask(task);
                     }
                 } catch (final Exception e) {
-                    e.printStackTrace();
+                    e.printStackTrace(System.err);
+                    break;
                 }
             }
         }

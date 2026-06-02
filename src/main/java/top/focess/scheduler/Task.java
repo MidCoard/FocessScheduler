@@ -1,7 +1,5 @@
 package top.focess.scheduler;
 
-import top.focess.scheduler.exceptions.TaskNotFoundError;
-
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -24,9 +22,6 @@ public interface Task {
      *
      * @param mayInterruptIfRunning true if cancel it without its status, false otherwise
      * @return true if it is cancelled, false it cannot be cancelled, or it is already cancelled
-     *
-     * @throws UnsupportedOperationException if mayInterruptIfRunning is true and the scheduler does not support cancelling running task
-     * @throws TaskNotFoundError         if the task is not found, it is an internal error
      */
     boolean cancel(boolean mayInterruptIfRunning);
 
@@ -35,8 +30,6 @@ public interface Task {
      *
      * @return true if it is cancelled, false it cannot be cancelled, or it is already cancelled
      * @see #cancel(boolean)
-     *
-     * @throws TaskNotFoundError         if the task is not found, it is an internal error
      */
     default boolean cancel() {
         return this.cancel(false);
