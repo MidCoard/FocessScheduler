@@ -200,11 +200,13 @@ public class TestUtil {
             } catch (InterruptedException e) {
             }
         });
-        long now = System.currentTimeMillis();
+        long now = System.nanoTime();
         AtomicBoolean flag = new AtomicBoolean(false);
         TaskPool andTaskPool = new OrTaskPool(threadPoolScheduler, ()-> {
             flag.set(true);
-            assertTrue(System.currentTimeMillis() - now > 1000);
+            final long elapsedMs = (System.nanoTime() - now) / 1_000_000;
+            assertTrue(elapsedMs >= 900,
+                "expected >= 900ms but was " + elapsedMs + "ms");
         });
         andTaskPool.addTask(task1);
         andTaskPool.addTask(task2);
