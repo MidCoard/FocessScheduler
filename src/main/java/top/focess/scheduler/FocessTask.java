@@ -160,40 +160,34 @@ public class FocessTask implements ITask {
 
     @Override
     public synchronized void join() throws InterruptedException, CancellationException, ExecutionException {
-        if (this.exception != null)
-            throw this.exception;
-        if (this.isFinished())
-            return;
-        if (this.isCancelled())
-            throw new CancellationException("Task is cancelled");
-        this.wait();
-        if (this.isCancelled())
-            throw new CancellationException("Task is cancelled");
-        if (this.exception != null)
-            throw this.exception;
-    }
-
-    private void wait0(final long timeout) throws InterruptedException {
-        if (timeout <= 0)
-            return;
-        this.wait(timeout);
+        // loop to guard against spurious wakeups: only return once a terminal state is reached
+        while (true) {
+            if (this.exception != null)
+                throw this.exception;
+            if (this.isFinished())
+                return;
+            if (this.isCancelled())
+                throw new CancellationException("Task is cancelled");
+            this.wait();
+        }
     }
 
     @Override
     public synchronized void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
-        if (this.exception != null)
-            throw this.exception;
-        if (this.isFinished())
-            return;
-        if (this.isCancelled())
-            throw new CancellationException("Task is cancelled");
-        this.wait0(unit.toMillis(timeout));
-        if (this.isCancelled())
-            throw new CancellationException("Task is cancelled");
-        if (this.exception != null)
-            throw this.exception;
-        if (!this.isFinished())
-            throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
+        final long deadline = System.currentTimeMillis() + unit.toMillis(timeout);
+        // loop to guard against spurious wakeups and to honour the remaining timeout
+        while (true) {
+            if (this.exception != null)
+                throw this.exception;
+            if (this.isFinished())
+                return;
+            if (this.isCancelled())
+                throw new CancellationException("Task is cancelled");
+            final long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0)
+                throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
+            this.wait(remaining);
+        }
     }
 
     @Override

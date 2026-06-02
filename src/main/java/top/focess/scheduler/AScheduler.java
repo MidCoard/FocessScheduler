@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 public abstract class AScheduler implements Scheduler {
 
-    private static final List<Scheduler> SCHEDULER_LIST = Lists.newArrayList();
+    private static final List<Scheduler> SCHEDULER_LIST = Lists.newCopyOnWriteArrayList();
     /**
      * The uncaught exception handler
      */

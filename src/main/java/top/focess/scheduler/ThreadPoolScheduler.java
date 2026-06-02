@@ -12,7 +12,7 @@ import java.util.UUID;
 public class ThreadPoolScheduler extends AScheduler {
 
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap(); // can be opt to Non-Concurrent, use synchronized
-    private final List<ThreadPoolSchedulerThread> threads = Lists.newArrayList();
+    private final List<ThreadPoolSchedulerThread> threads = Lists.newCopyOnWriteArrayList();
     private final boolean immediate;
     private final boolean isDaemon;
     private int currentThread;
