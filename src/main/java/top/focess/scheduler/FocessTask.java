@@ -14,11 +14,24 @@ import java.util.function.Consumer;
 
 public class FocessTask implements ITask {
 
+    /**
+     * Enum representing the possible states of a task
+     */
+    private enum TaskState {
+        /** Task is pending execution */
+        PENDING,
+        /** Task is currently running */
+        RUNNING,
+        /** Task has finished execution */
+        FINISHED,
+        /** Task has been cancelled */
+        CANCELLED
+    }
+
     private final Runnable runnable;
     private final Scheduler scheduler;
     private final String name;
-    protected boolean isRunning;
-    protected boolean isFinished;
+    private TaskState state = TaskState.PENDING;
 
     protected ExecutionException exception;
     private Duration period;
@@ -27,24 +40,10 @@ public class FocessTask implements ITask {
     private Consumer<ExecutionException> handler;
     private final List<TaskPool> taskPools = Lists.newCopyOnWriteArrayList();
 
-    private static final Map<Task,Boolean> TASK_SET = new WeakHashMap<>();
-
-    /**
-     * Get all the tasks which are not gc yet
-     * Note: this is only for debug.
-     *
-     * @return all the tasks which are not gc yet
-     */
-    public static Set<Task> getTasks() {
-        return Collections.unmodifiableSet(TASK_SET.keySet());
-    }
-
-
     FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler, final String name) {
         this.runnable = runnable;
         this.scheduler = scheduler;
         this.name = scheduler.getName() + "-" + name;
-        TASK_SET.put(this,true);
     }
 
     FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler) {
@@ -80,20 +79,23 @@ public class FocessTask implements ITask {
 
     @Override
     public synchronized void clear() {
-        this.isFinished = false;
-        this.isRunning = false;
+        // When a periodic task completes, it resets to PENDING for the next execution
+        if (this.isPeriod && this.state == TaskState.FINISHED) {
+            this.state = TaskState.PENDING;
+        }
         this.exception = null;
     }
 
     @Override
     public synchronized void startRun() {
-        this.isRunning = true;
+        this.state = TaskState.RUNNING;
     }
 
     @Override
     public synchronized void endRun() {
-        this.isRunning = false;
-        this.isFinished = true;
+        if (this.state == TaskState.RUNNING) {
+            this.state = TaskState.FINISHED;
+        }
         this.notifyAll();
         for (final TaskPool taskPool : this.taskPools) {
             taskPool.removeTask(this);
@@ -120,12 +122,16 @@ public class FocessTask implements ITask {
 
     @Override
     public boolean cancel(final boolean mayInterruptIfRunning) {
-        return this.nativeTask.cancel(mayInterruptIfRunning);
+        boolean cancelled = this.nativeTask.cancel(mayInterruptIfRunning);
+        if (cancelled) {
+            this.markCancelled();
+        }
+        return cancelled;
     }
 
     @Override
     public synchronized boolean isRunning() {
-        return this.isRunning;
+        return this.state == TaskState.RUNNING;
     }
 
     @Override
@@ -145,12 +151,22 @@ public class FocessTask implements ITask {
 
     @Override
     public synchronized boolean isFinished() {
-        return !this.isPeriod && this.isFinished;
+        // A non-periodic task is finished when its state is FINISHED
+        // A periodic task never truly "finishes" in the sense of this method
+        return !this.isPeriod && this.state == TaskState.FINISHED;
     }
 
     @Override
     public synchronized boolean isCancelled() {
-        return this.nativeTask.isCancelled();
+        // Check if the task is in CANCELLED state or if the native task is cancelled
+        return this.state == TaskState.CANCELLED || this.nativeTask.isCancelled();
+    }
+
+    /**
+     * Internal method to mark the task as cancelled in the state machine
+     */
+    private synchronized void markCancelled() {
+        this.state = TaskState.CANCELLED;
     }
 
     @Override
@@ -192,7 +208,11 @@ public class FocessTask implements ITask {
 
     @Override
     public void run() throws ExecutionException {
-        this.runnable.run();
+        try {
+            this.runnable.run();
+        } catch (Exception e) {
+            throw new ExecutionException(e);
+        }
     }
 
     @Override

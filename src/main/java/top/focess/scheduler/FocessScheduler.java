@@ -11,7 +11,7 @@ public class FocessScheduler extends AScheduler {
     /**
      * New a FocessScheduler with some default configuration (not daemon).
      *
-     * @param name the plugin
+     * @param name the name
      */
     public FocessScheduler(final String name) {
         this(name, false);
@@ -22,7 +22,7 @@ public class FocessScheduler extends AScheduler {
      * For example, if the finish-time of the last task is after the start-time of the next task, the next task will only be executed after the last task is finished.
      * As a result, the task running in this scheduler cannot be cancelled if it is already running.
      *
-     * @param name the plugin
+     * @param name the name
      * @param isDaemon whether the scheduler is a daemon thread
      */
     public FocessScheduler(final String name, boolean isDaemon) {
@@ -50,19 +50,6 @@ public class FocessScheduler extends AScheduler {
         // interrupt the scheduler thread so that a blocking task (or wait) wakes up and
         // the run loop can observe shouldStop and terminate cooperatively
         this.thread.interrupt();
-    }
-
-    @Override
-    public void cancel(final ITask task) {
-        // FocessScheduler runs tasks one-at-a-time on its single scheduler thread, so cancelling
-        // the running task means interrupting that thread. Only interrupt when the requested task
-        // is actually the one currently executing, otherwise we could disturb an unrelated task or
-        // the scheduler's wait state. The task must cooperate by reacting to the interrupt (e.g.
-        // letting InterruptedException propagate or returning); the scheduler thread clears any
-        // leftover interrupt before picking up the next task.
-        final ComparableTask current = this.thread.task;
-        if (current != null && current.getTask() == task)
-            this.thread.interrupt();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -104,7 +91,7 @@ public class FocessScheduler extends AScheduler {
                         if (FocessScheduler.this.tasks.isEmpty())
                             FocessScheduler.this.wait();
                         this.task = FocessScheduler.this.tasks.poll();
-                        // if task is null, means the scheduler is closed
+                        // if task is null, the scheduler may be stopped, continue to loopback and check shouldStop
                         if (this.task != null && !this.task.isCancelled()) {
                             FocessScheduler.this.wait0(this.task.getTime() - System.currentTimeMillis());
                             if (this.task.getTime() > System.currentTimeMillis()) {
@@ -112,6 +99,8 @@ public class FocessScheduler extends AScheduler {
                                 continue;
                             }
                             final ComparableTask task = FocessScheduler.this.tasks.peek();
+                            // in fact, here is no need to compare the time of the next task, but we need to make sure the order
+                            // of the tasks execution meets the user time order
                             if (task != null && task.getTime() < this.task.getTime()) {
                                 FocessScheduler.this.tasks.add(this.task);
                                 continue;
@@ -125,8 +114,8 @@ public class FocessScheduler extends AScheduler {
                     }
                     try {
                         this.task.getTask().run();
-                    } catch (final Throwable e) {
-                        this.task.getTask().setException(new ExecutionException(e));
+                    } catch (final ExecutionException e) {
+                        this.task.getTask().setException(e);
                     } finally {
                         // consume any interrupt raised by cancel(true) so it does not leak into
                         // the scheduler thread's next wait() and spin the run loop

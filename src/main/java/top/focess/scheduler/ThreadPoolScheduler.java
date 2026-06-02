@@ -85,14 +85,6 @@ public class ThreadPoolScheduler extends AScheduler {
         this.notify();
     }
 
-    @Override
-    public void cancel(final ITask task) {
-        if (this.taskThreadMap.containsKey(task)) {
-            this.taskThreadMap.get(task).cancel();
-            this.taskThreadMap.remove(task);
-        } else throw new TaskNotFoundError(task);
-    }
-
     public void recreate(final String name) {
         for (int i = 0; i < this.threads.size(); i++)
             if (this.threads.get(i).getName().equals(name)) {
