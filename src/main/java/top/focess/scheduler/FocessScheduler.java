@@ -6,7 +6,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 public class FocessScheduler extends AScheduler {
-    private final Thread thread;
+    private final SchedulerThread thread;
 
     /**
      * New a FocessScheduler with some default configuration (not daemon).
@@ -55,10 +55,14 @@ public class FocessScheduler extends AScheduler {
     @Override
     public void cancel(final ITask task) {
         // FocessScheduler runs tasks one-at-a-time on its single scheduler thread, so cancelling
-        // the running task means interrupting that thread. The task must cooperate by reacting to
-        // the interrupt (e.g. letting InterruptedException propagate or returning); the scheduler
-        // thread clears any leftover interrupt before picking up the next task.
-        this.thread.interrupt();
+        // the running task means interrupting that thread. Only interrupt when the requested task
+        // is actually the one currently executing, otherwise we could disturb an unrelated task or
+        // the scheduler's wait state. The task must cooperate by reacting to the interrupt (e.g.
+        // letting InterruptedException propagate or returning); the scheduler thread clears any
+        // leftover interrupt before picking up the next task.
+        final ComparableTask current = this.thread.task;
+        if (current != null && current.getTask() == task)
+            this.thread.interrupt();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -90,7 +94,9 @@ public class FocessScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
-                    // clear any leftover interrupt from a cancelled task before dispatching again
+                    // Clear any leftover interrupt from a cancelled task so it does not spin the
+                    // next wait(). Shutdown does not rely on this flag (it uses shouldStop + notify),
+                    // so clearing here cannot swallow a shutdown signal.
                     Thread.interrupted();
                     synchronized (FocessScheduler.this) {
                         if (FocessScheduler.this.shouldStop)
