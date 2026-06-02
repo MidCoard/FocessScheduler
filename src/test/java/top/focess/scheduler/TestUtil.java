@@ -214,8 +214,8 @@ public class TestUtil {
         threadPoolScheduler.shutdown();
     }
 
-    @Test
-    void testFocessScheduler() throws InterruptedException, ExecutionException {
+    @RepeatedTest(5)
+    void testFocessScheduler() throws InterruptedException {
         FocessScheduler focessScheduler = new FocessScheduler("Test");
         Task task0 = focessScheduler.run(() -> {
             System.out.println(1);
@@ -227,14 +227,16 @@ public class TestUtil {
         assertTrue(task.isFinished());
         assertTrue(task0.cancel(true));
         assertTrue(task0.isCancelled());
-        long current = System.currentTimeMillis();
+        long current = System.nanoTime();
         Task task1 = focessScheduler.run(() -> {
             System.out.println(11);
         }, Duration.ofSeconds(3));
         assertTimeoutPreemptively(Duration.ofSeconds(4), () -> {
             task1.join();
-            assertTrue(System.currentTimeMillis() - current > 3000);
-            System.out.println(System.currentTimeMillis() - current );
+            final long elapsedMs = (System.nanoTime() - current) / 1_000_000;
+            System.out.println(elapsedMs);
+            assertTrue(elapsedMs >= 2900,
+                "expected >= 2900ms but was " + elapsedMs + "ms (coarse clock granularity may round down)");
         });
         focessScheduler.shutdown();
     }
