@@ -62,7 +62,7 @@ public class TestUtil {
         }, Duration.ofSeconds(1));
         assertTrue(task3.cancel());
         assertTrue(task3.isCancelled());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -75,7 +75,10 @@ public class TestUtil {
                 try {
                     sleep(3000);
                 } catch (InterruptedException e) {
-                    fail();
+                    // cancel(true) now interrupts the running task instead of using the
+                    // unsafe Thread#stop(); treat the interruption as the cancellation signal
+                    Thread.currentThread().interrupt();
+                    return;
                 }
                 System.out.println(finalI);
             }));
@@ -98,7 +101,7 @@ public class TestUtil {
         } catch (InterruptedException e) {
             fail();
         }
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -146,7 +149,7 @@ public class TestUtil {
         for (Task task2 : tasks)
             assertDoesNotThrow(()->task2.join());
         assertEquals(5, count.get());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @Test
@@ -159,7 +162,7 @@ public class TestUtil {
         }
         for (Task task : tasks)
             assertDoesNotThrow(()->task.join());
-        scheduler.close();
+        scheduler.shutdown();
     }
 
     @Test
@@ -212,7 +215,7 @@ public class TestUtil {
             assertTrue(System.currentTimeMillis() - current > 3000);
             System.out.println(System.currentTimeMillis() - current );
         });
-        focessScheduler.close();
+        focessScheduler.shutdown();
     }
 
     @RepeatedTest(5)
@@ -237,6 +240,6 @@ public class TestUtil {
         }
         assertTrue(task.isCancelled());
         assertNotEquals(1, atomicInteger.get());
-        scheduler.close();
+        scheduler.shutdown();
     }
 }

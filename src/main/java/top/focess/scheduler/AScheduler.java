@@ -38,7 +38,7 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public void close() {
+    public void shutdown() {
         AScheduler.SCHEDULER_LIST.remove(this);
     }
 
@@ -152,7 +152,7 @@ public abstract class AScheduler implements Scheduler {
         return task;
     }
 
-    public boolean isClosed() {
+    public boolean isShutdown() {
         return this.shouldStop;
     }
 

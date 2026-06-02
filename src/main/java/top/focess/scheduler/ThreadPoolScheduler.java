@@ -66,22 +66,22 @@ public class ThreadPoolScheduler extends AScheduler {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
     @Override
-    public synchronized void close() {
-        super.close();
+    public synchronized void shutdown() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
-            thread.close();
+            thread.shutdown();
         this.notify();
     }
 
     @Override
-    public void closeNow() {
-        super.close();
+    public void shutdownNow() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
-            thread.closeNow();
+            thread.shutdownNow();
         this.notify();
     }
 
@@ -132,7 +132,7 @@ public class ThreadPoolScheduler extends AScheduler {
             super(name);
             this.setDaemon(isDaemon);
             this.setUncaughtExceptionHandler((t, e) -> {
-                ThreadPoolScheduler.this.close();
+                ThreadPoolScheduler.this.shutdown();
                 if (ThreadPoolScheduler.this.getUncaughtExceptionHandler() != null)
                     ThreadPoolScheduler.this.getUncaughtExceptionHandler().uncaughtException(t, e);
             });

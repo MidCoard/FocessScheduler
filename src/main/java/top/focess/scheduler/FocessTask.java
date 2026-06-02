@@ -114,7 +114,7 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public boolean isSingleThread() {
+    public boolean canCancelRunningTask() {
         return this.scheduler instanceof ThreadPoolScheduler;
     }
 

@@ -164,21 +164,21 @@ public interface Scheduler {
     String getName();
 
     /**
-     * Close this scheduler
+     * Shut this scheduler down gracefully, letting the tasks that are already running finish.
      */
-    void close();
+    void shutdown();
 
     /**
-     * Indicate whether this scheduler is closed or not
+     * Indicate whether this scheduler has been shut down or not
      *
-     * @return true if this scheduler is closed, false otherwise
+     * @return true if this scheduler has been shut down, false otherwise
      */
-    boolean isClosed();
+    boolean isShutdown();
 
     /**
-     * Close this scheduler even if there are tasks running
+     * Shut this scheduler down immediately, attempting to stop the tasks that are still running.
      */
-    void closeNow();
+    void shutdownNow();
 
     /**
      * Set the uncaught exception handler

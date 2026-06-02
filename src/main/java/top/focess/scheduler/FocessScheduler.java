@@ -37,17 +37,19 @@ public class FocessScheduler extends AScheduler {
     }
 
     @Override
-    public synchronized void close() {
-        super.close();
+    public synchronized void shutdown() {
+        super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         this.notify();
     }
 
     @Override
-    public synchronized void closeNow() {
-        this.close();
-        this.thread.stop();
+    public synchronized void shutdownNow() {
+        this.shutdown();
+        // interrupt the scheduler thread so that a blocking task (or wait) wakes up and
+        // the run loop can observe shouldStop and terminate cooperatively
+        this.thread.interrupt();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -64,7 +66,7 @@ public class FocessScheduler extends AScheduler {
         public SchedulerThread(final String name) {
             super(name);
             this.setUncaughtExceptionHandler((t, e) -> {
-                FocessScheduler.this.close();
+                FocessScheduler.this.shutdown();
                 if (this.task != null) {
                     this.task.getTask().setException(new ExecutionException(e));
                     this.task.getTask().endRun();
