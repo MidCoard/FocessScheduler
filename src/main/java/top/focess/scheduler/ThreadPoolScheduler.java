@@ -85,6 +85,7 @@ public class ThreadPoolScheduler extends AScheduler {
         this.notify();
     }
 
+    @Override
     public void cancel(final ITask task) {
         if (this.taskThreadMap.containsKey(task)) {
             this.taskThreadMap.get(task).cancel();

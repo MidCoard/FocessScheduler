@@ -52,6 +52,15 @@ public class FocessScheduler extends AScheduler {
         this.thread.interrupt();
     }
 
+    @Override
+    public void cancel(final ITask task) {
+        // FocessScheduler runs tasks one-at-a-time on its single scheduler thread, so cancelling
+        // the running task means interrupting that thread. The task must cooperate by reacting to
+        // the interrupt (e.g. letting InterruptedException propagate or returning); the scheduler
+        // thread clears any leftover interrupt before picking up the next task.
+        this.thread.interrupt();
+    }
+
     private synchronized void wait0(long timeout) throws InterruptedException {
         if (timeout <= 0)
             return;
@@ -81,6 +90,8 @@ public class FocessScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
+                    // clear any leftover interrupt from a cancelled task before dispatching again
+                    Thread.interrupted();
                     synchronized (FocessScheduler.this) {
                         if (FocessScheduler.this.shouldStop)
                             break;
@@ -110,6 +121,10 @@ public class FocessScheduler extends AScheduler {
                         this.task.getTask().run();
                     } catch (final Throwable e) {
                         this.task.getTask().setException(new ExecutionException(e));
+                    } finally {
+                        // consume any interrupt raised by cancel(true) so it does not leak into
+                        // the scheduler thread's next wait() and spin the run loop
+                        Thread.interrupted();
                     }
                     this.task.getTask().endRun();
                     if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {

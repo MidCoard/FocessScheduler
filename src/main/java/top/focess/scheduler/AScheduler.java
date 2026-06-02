@@ -43,6 +43,12 @@ public abstract class AScheduler implements Scheduler {
     }
 
     /**
+     * Cancel a running task, attempting to interrupt the thread that executes it.
+     * @param task the task to cancel
+     */
+    public abstract void cancel(final ITask task);
+
+    /**
      * Get the schedulers as list
      * @return the schedulers as list
      */

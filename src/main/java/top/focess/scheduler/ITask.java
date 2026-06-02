@@ -5,8 +5,6 @@ import java.util.concurrent.ExecutionException;
 
 interface ITask extends Task {
 
-    boolean canCancelRunningTask();
-
     void removeTaskPool(TaskPool taskPool);
 
     void run() throws ExecutionException;
@@ -16,9 +14,7 @@ interface ITask extends Task {
     void setNativeTask(ComparableTask task);
 
     default void cancel0() {
-        if (this.canCancelRunningTask())
-            ((ThreadPoolScheduler) this.getScheduler()).cancel(this);
-        else throw new UnsupportedOperationException();
+        ((AScheduler) this.getScheduler()).cancel(this);
         this.clear();
     }
 

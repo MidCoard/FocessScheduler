@@ -114,11 +114,6 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public boolean canCancelRunningTask() {
-        return this.scheduler instanceof ThreadPoolScheduler;
-    }
-
-    @Override
     public synchronized void removeTaskPool(final TaskPool taskPool) {
         this.taskPools.remove(taskPool);
     }

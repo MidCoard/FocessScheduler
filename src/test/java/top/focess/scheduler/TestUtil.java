@@ -218,6 +218,35 @@ public class TestUtil {
         focessScheduler.shutdown();
     }
 
+    @Test
+    void testFocessSchedulerCancelRunning() throws InterruptedException {
+        FocessScheduler focessScheduler = new FocessScheduler("cancel-running");
+        AtomicBoolean interrupted = new AtomicBoolean(false);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        Task task = focessScheduler.run(() -> {
+            try {
+                sleep(5000);
+                completed.set(true);
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+        });
+        sleep(1000);
+        assertTrue(task.isRunning());
+        assertTrue(task.cancel(true));
+        sleep(500);
+        assertTrue(task.isCancelled());
+        assertTrue(interrupted.get());
+        assertFalse(completed.get());
+        // the scheduler thread must survive the interrupt and keep running later tasks
+        AtomicBoolean ran = new AtomicBoolean(false);
+        Task after = focessScheduler.run(() -> ran.set(true));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> after.join());
+        assertTrue(ran.get());
+        focessScheduler.shutdown();
+    }
+
     @RepeatedTest(5)
     void testScheduler5() {
         Scheduler scheduler = new FocessScheduler("test-5");
