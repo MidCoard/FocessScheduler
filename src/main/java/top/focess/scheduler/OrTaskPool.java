@@ -20,7 +20,7 @@ public class OrTaskPool extends TaskPool {
 			} catch (final UnsupportedOperationException ignored) {}
 		if (this.runnable != null)
 			this.task = this.scheduler.run(this.runnable);
-		this.isFinished = true;
+		this.markFinished();
 	}
 
 	@Override

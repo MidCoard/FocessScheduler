@@ -76,7 +76,7 @@ public abstract class AScheduler implements Scheduler {
     public synchronized Task run(final Runnable runnable, final Duration delay, final String name) {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
-        final FocessTask task = new FocessTask(runnable, this,name);
+        final FocessTask task = new FocessTask(runnable, this, name);
         this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
         this.notify();
         return task;

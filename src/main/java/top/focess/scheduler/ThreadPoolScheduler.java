@@ -167,7 +167,7 @@ public class ThreadPoolScheduler extends AScheduler {
                             ThreadPoolScheduler.this.wait();
                         task = ThreadPoolScheduler.this.tasks.poll();
                         // if task is null, means the scheduler is closed
-                        if (task!= null && !task.isCancelled()) {
+                        if (task != null && !task.isCancelled()) {
                             ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
                             if (task.getTime() > System.currentTimeMillis()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
