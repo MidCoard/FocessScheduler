@@ -175,7 +175,7 @@ public class FocessTask implements ITask {
     @Override
     public synchronized void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
         final long deadline = System.currentTimeMillis() + unit.toMillis(timeout);
-        // loop to guard against spurious wakeups and to honour the remaining timeout
+        // loop to guard against spurious wakeups and to honor the remaining timeout
         while (true) {
             if (this.exception != null)
                 throw this.exception;
