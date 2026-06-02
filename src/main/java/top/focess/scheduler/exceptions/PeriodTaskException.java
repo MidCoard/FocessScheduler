@@ -4,16 +4,17 @@ import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.Task;
 
 /**
- * Thrown to indicate that a period task cannot be added to a task pool.
- * Task pools are designed for one-off tasks that complete and trigger a final callback.
- * Period tasks cycle indefinitely and do not have a final "completion" event.
+ * Thrown when a period task is added to a task pool, which only accepts one-off tasks.
+ * <p>
+ * Task pools depend on a terminal completion event to finalize. Period tasks cycle
+ * indefinitely and never produce such an event, so they cannot be pooled.
  */
 public class PeriodTaskException extends IllegalStateException {
 
     /**
-     * Constructs a PeriodTaskException
+     * Constructs a new {@code PeriodTaskException}.
      *
-     * @param task the period task that cannot be added to a pool
+     * @param task the period task that was rejected
      */
     public PeriodTaskException(@NotNull final Task task) {
         super("Period task " + task.getName() + " cannot be added to a task pool. Task pools are for non-period tasks only.");

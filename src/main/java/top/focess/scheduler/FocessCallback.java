@@ -8,6 +8,15 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+/**
+ * The default implementation of {@link Callback}.
+ * <p>
+ * Wraps a {@link Callable} and stores the computed value or exception.
+ * If an exception handler is configured via {@link #setExceptionHandler(Function)},
+ * it can suppress the exception and produce a fallback value.
+ *
+ * @param <V> the result type
+ */
 public class FocessCallback<V> extends FocessTask implements Callback<V> {
 
     private final Callable<V> callback;

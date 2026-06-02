@@ -4,15 +4,15 @@ import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.Callback;
 
 /**
- * Thrown to indicate the task is not finished
+ * Thrown when {@link Callback#call()} is invoked on a task that has not yet finished.
  */
 public class TaskNotFinishedException extends IllegalStateException {
 
     /**
-     * Constructs a TaskNotFinishedException
+     * Constructs a new {@code TaskNotFinishedException}.
      *
-     * @param callback the task
-     * @param <V>      the task return type
+     * @param callback the callback that has not finished
+     * @param <V>      the result type of the callback
      */
     public <V> TaskNotFinishedException(@NotNull final Callback<V> callback) {
         super("Task " + callback.getName() + " is not finished.");

@@ -4,6 +4,13 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.ExecutionException;
 
+/**
+ * A worker thread in a {@link ThreadPoolScheduler}.
+ * <p>
+ * Waits for tasks to be assigned via {@link #startTask(FocessTask)}, executes them,
+ * and returns to an available state. Supports graceful shutdown via {@link #shutdown()}
+ * and immediate shutdown via {@link #shutdownNow()}.
+ */
 public class ThreadPoolSchedulerThread extends Thread {
     private final ThreadPoolScheduler scheduler;
     private final String name;

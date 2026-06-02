@@ -18,20 +18,24 @@ public class ThreadPoolScheduler extends AScheduler {
     protected final Object AVAILABLE_THREAD_LOCK = new Object();
 
     /**
-     * The uncaught exception handler
+     * The uncaught exception handler for worker threads.
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
 
     /**
-     * New a ThreadPoolScheduler, the scheduler can run tasks in parallel.
-     * The next task will be executed immediately if the immediate is true, otherwise the next task will be executed when there is an available thread.
-     * As a result, the task running in this scheduler can be cancelled if it is already running.
+     * Creates a new {@code ThreadPoolScheduler}.
+     * <p>
+     * This is a multi-threaded scheduler: tasks are dispatched to a pool of worker threads
+     * and execute in parallel. A running task can be cooperatively cancelled via
+     * {@link Task#cancel(boolean) cancel(true)}, which interrupts the worker thread
+     * executing it.
      *
-     * @param poolSize  the thread pool size
-     * @param immediate true if the scheduler should run immediately, false otherwise
+     * @param poolSize  the number of worker threads
+     * @param immediate if {@code true}, the pool expands dynamically when all workers are busy;
+     *                  if {@code false}, tasks wait for an available worker
      * @param name      the scheduler name
-     * @param isDaemon  true if the scheduler is a daemon thread, false otherwise
+     * @param isDaemon  {@code true} to create daemon worker threads
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name,final boolean isDaemon) {
         super(name);
@@ -44,10 +48,10 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     /**
-     * New a ThreadPoolScheduler with some default configuration (not daemon).
+     * Creates a new {@code ThreadPoolScheduler} with non-daemon worker threads.
      *
-     * @param poolSize  the thread pool size
-     * @param immediate true if the scheduler should run immediately, false otherwise
+     * @param poolSize  the number of worker threads
+     * @param immediate if {@code true}, the pool expands dynamically when all workers are busy
      * @param name      the scheduler name
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name) {
@@ -55,9 +59,11 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     /**
-     * New a ThreadPoolScheduler with some default configuration (not immediate, not daemon).
-     * @param prefix the prefix of the scheduler name
-     * @param poolSize the thread pool size
+     * Creates a new {@code ThreadPoolScheduler} with non-immediate, non-daemon defaults
+     * and an auto-generated name.
+     *
+     * @param prefix   the prefix for the generated scheduler name
+     * @param poolSize the number of worker threads
      */
     public ThreadPoolScheduler(final String prefix, final int poolSize) {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));

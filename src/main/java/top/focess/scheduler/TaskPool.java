@@ -9,12 +9,12 @@ import java.util.concurrent.ExecutionException;
 /**
  * Abstract base class for task pools that group tasks together.
  * <p>
- * Task pools are designed for one-off (non-period) tasks. When all tasks in the pool
- * have finished, an optional final callback ({@code runnable}) is executed.
+ * Task pools are designed for one-off (non-period) tasks. When the pool's completion
+ * condition is met, an optional final callback is scheduled.
  * <p>
- * <b>Contract:</b> Only non-period tasks can be added. Period tasks are rejected with
- * {@link PeriodTaskException}. This is by design because period tasks cycle indefinitely
- * and do not have a final "completion" event suitable for pool finalization.
+ * <b>Contract:</b> Only non-period tasks can be added; period tasks are rejected with
+ * {@link PeriodTaskException}, because they cycle indefinitely and never produce
+ * the terminal completion event a pool depends on.
  */
 public abstract class TaskPool {
 

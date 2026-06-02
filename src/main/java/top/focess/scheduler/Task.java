@@ -7,28 +7,30 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
- * The wrapped task. You can use this to handle runnable processing
+ * A handle to a scheduled task, providing methods to query execution state,
+ * wait for completion, and request cancellation.
  */
 public interface Task {
 
     /**
-     * Cancel this task
+     * Cancels this task.
      * <p>
-     * When {@code mayInterruptIfRunning} is true and the task is already running, the executing
-     * thread is interrupted (its interrupt status is set). Cancellation is therefore cooperative:
-     * a blocking call such as {@link Thread#sleep} throws {@link InterruptedException}, but a task
-     * that swallows the interrupt without reacting to it will keep running to completion. The
-     * executing thread itself is never forcibly stopped and is reused for later tasks.
+     * When {@code mayInterruptIfRunning} is {@code true} and the task is currently running,
+     * the executing thread is interrupted. Cancellation is <em>cooperative</em>: a blocking
+     * call such as {@link Thread#sleep} throws {@link InterruptedException}, but a task that
+     * swallows the interrupt without reacting to it will continue to completion. The executing
+     * thread is never forcibly stopped and is reused for later tasks.
      *
-     * @param mayInterruptIfRunning true if cancel it without its status, false otherwise
-     * @return true if it is cancelled, false it cannot be cancelled, or it is already cancelled
+     * @param mayInterruptIfRunning {@code true} to interrupt the running task's thread
+     * @return {@code true} if the task was cancelled, {@code false} if it was already
+     *         cancelled or had already finished
      */
     boolean cancel(boolean mayInterruptIfRunning);
 
     /**
-     * Cancel this task
+     * Cancels this task without interrupting the executing thread.
      *
-     * @return true if it is cancelled, false it cannot be cancelled, or it is already cancelled
+     * @return {@code true} if the task was cancelled, {@code false} otherwise
      * @see #cancel(boolean)
      */
     default boolean cancel() {
@@ -36,74 +38,75 @@ public interface Task {
     }
 
     /**
-     * Indicate whether this task is running or not
+     * Returns whether this task is currently executing.
      *
-     * @return true if the task is running, false otherwise
+     * @return {@code true} if the task is running, {@code false} otherwise
      */
     boolean isRunning();
 
     /**
-     * Get the scheduler it belongs to
+     * Returns the scheduler this task belongs to.
      *
-     * @return the scheduler it belongs to
+     * @return the owning scheduler
      */
     Scheduler getScheduler();
 
     /**
-     * Get the name of the task
+     * Returns the name of this task.
      *
-     * @return the name of the task
+     * @return the task name
      */
     String getName();
 
     /**
-     * Indicate whether this task is a period-task or not
+     * Returns whether this task is a periodic task.
      *
-     * @return true if it is a period-task, false otherwise
+     * @return {@code true} if the task is periodic, {@code false} otherwise
      */
     boolean isPeriod();
 
     /**
-     * Indicate whether this task is finished or not
+     * Returns whether this task has finished execution.
      *
-     * @return true if this task is finished, false otherwise
+     * @return {@code true} if the task is finished, {@code false} otherwise
      */
     boolean isFinished();
 
     /**
-     * Indicate whether this task is cancelled or not
+     * Returns whether this task has been cancelled.
      *
-     * @return true if it is cancelled, false otherwise
+     * @return {@code true} if the task is cancelled, {@code false} otherwise
      */
     boolean isCancelled();
 
     /**
-     * Wait until this task is finished
+     * Waits until this task finishes, is cancelled, or throws an exception.
      *
-     * @throws ExecutionException    if there is any exception in the execution processing
-     * @throws InterruptedException  if the task is interrupted
-     * @throws CancellationException if the task is cancelled
+     * @throws ExecutionException    if the task threw an exception
+     * @throws InterruptedException  if the current thread was interrupted while waiting
+     * @throws CancellationException if the task was cancelled
      */
     void join() throws ExecutionException, InterruptedException, CancellationException;
 
     /**
-     * Wait for the time
+     * Waits at most the given time for this task to finish.
      *
-     * @param timeout the timeout
-     * @param unit    the time unit
+     * @param timeout the maximum time to wait
+     * @param unit    the time unit of the timeout argument
      * @throws InterruptedException  if the current thread was interrupted while waiting
-     * @throws ExecutionException    if there is any exception in the execution processing
-     * @throws TimeoutException      if the time is out
-     * @throws CancellationException if the task is cancelled
+     * @throws ExecutionException    if the task threw an exception
+     * @throws TimeoutException      if the wait timed out
+     * @throws CancellationException if the task was cancelled
      */
     void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException;
 
     /**
-     * Set the uncaught exception handler
+     * Sets the exception handler for this task.
      * <p>
-     * Note: this handler will clear exception mark of this task
+     * When set, the handler is invoked if the task throws an exception, consuming it
+     * so that {@link #join()} does not throw.
      *
-     * @param handler the handler
+     * @param handler the exception handler, or {@code null} to clear
      */
     void setExceptionHandler(Consumer<ExecutionException> handler);
 

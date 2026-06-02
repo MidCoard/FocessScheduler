@@ -9,21 +9,24 @@ public class FocessScheduler extends AScheduler {
     private final SchedulerThread thread;
 
     /**
-     * New a FocessScheduler with some default configuration (not daemon).
+     * Creates a new {@code FocessScheduler} with a non-daemon scheduler thread.
      *
-     * @param name the name
+     * @param name the scheduler name
      */
     public FocessScheduler(final String name) {
         this(name, false);
     }
 
     /**
-     * New a FocessScheduler, the scheduler will run all tasks in time order.
-     * For example, if the finish-time of the last task is after the start-time of the next task, the next task will only be executed after the last task is finished.
-     * As a result, the task running in this scheduler cannot be cancelled if it is already running.
+     * Creates a new {@code FocessScheduler}.
+     * <p>
+     * This is a single-threaded scheduler: all tasks are executed sequentially in time order.
+     * If a task runs longer than expected, subsequent tasks are delayed accordingly.
+     * A running task can be cooperatively cancelled via {@link Task#cancel(boolean) cancel(true)},
+     * which interrupts the scheduler thread.
      *
-     * @param name the name
-     * @param isDaemon whether the scheduler is a daemon thread
+     * @param name     the scheduler name
+     * @param isDaemon {@code true} to create a daemon scheduler thread
      */
     public FocessScheduler(final String name, boolean isDaemon) {
         super(name);
@@ -32,6 +35,12 @@ public class FocessScheduler extends AScheduler {
         this.thread.start();
     }
 
+    /**
+     * Creates a new {@code FocessScheduler} whose name is auto-generated from the given prefix.
+     *
+     * @param prefix the prefix for the generated scheduler name
+     * @return a new non-daemon {@code FocessScheduler}
+     */
     public static FocessScheduler newPrefixFocessScheduler(final String prefix) {
         return new FocessScheduler(prefix + "-FocessScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }

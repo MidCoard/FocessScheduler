@@ -21,8 +21,9 @@ import java.util.stream.Collectors;
 public abstract class AScheduler implements Scheduler {
 
     private static final List<Scheduler> SCHEDULER_LIST = Lists.newCopyOnWriteArrayList();
+
     /**
-     * The uncaught exception handler
+     * The uncaught exception handler for the scheduler thread.
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
@@ -43,8 +44,9 @@ public abstract class AScheduler implements Scheduler {
     }
 
     /**
-     * Get the schedulers as list
-     * @return the schedulers as list
+     * Returns an unmodifiable list of all registered schedulers.
+     *
+     * @return all registered schedulers
      */
     @Contract(pure = true)
     public static @NotNull @UnmodifiableView List<Scheduler> getSchedulers() {
@@ -188,8 +190,11 @@ public abstract class AScheduler implements Scheduler {
     }
 
     /**
-     * Wait on this scheduler's monitor for at most {@code timeout} milliseconds.
+     * Waits on this scheduler's monitor for at most {@code timeout} milliseconds.
      * A non-positive timeout is a no-op.
+     *
+     * @param timeout the maximum time to wait in milliseconds
+     * @throws InterruptedException if the current thread is interrupted while waiting
      */
     protected synchronized void wait0(final long timeout) throws InterruptedException {
         if (timeout <= 0)
@@ -199,7 +204,11 @@ public abstract class AScheduler implements Scheduler {
 
     /**
      * Best-effort cooperative interruption for a running task.
-     * Implementations should interrupt only when the given task is currently executing.
+     * <p>
+     * Implementations should interrupt only the thread that is currently executing
+     * the given task.
+     *
+     * @param task the task whose executing thread should be interrupted
      */
     protected abstract void interruptTaskIfRunning(FocessTask task);
 }

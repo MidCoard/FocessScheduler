@@ -12,19 +12,28 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
+/**
+ * The default implementation of {@link ITask}.
+ * <p>
+ * Manages task lifecycle through a state machine:
+ * {@code PENDING → RUNNING → FINISHED} (or {@code CANCELLED} at any point).
+ * Period tasks reset to {@code PENDING} after each execution.
+ * <p>
+ * Tasks are ordered by their scheduled execution time via {@link Comparable}.
+ */
 public class FocessTask implements ITask, Comparable<FocessTask> {
 
     /**
-     * Enum representing the possible states of a task
+     * The lifecycle states of a task.
      */
     private enum TaskState {
-        /** Task is pending execution */
+        /** The task is waiting to be executed. */
         PENDING,
-        /** Task is currently running */
+        /** The task is currently executing. */
         RUNNING,
-        /** Task has finished execution */
+        /** The task has completed execution. */
         FINISHED,
-        /** Task has been cancelled */
+        /** The task was cancelled before or during execution. */
         CANCELLED
     }
 
