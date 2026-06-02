@@ -4,14 +4,14 @@ import org.jetbrains.annotations.NotNull;
 import top.focess.scheduler.Scheduler;
 
 /**
- * Thrown to indicate a scheduler is closed
+ * Thrown when an operation is attempted on a scheduler that has been shut down.
  */
 public class SchedulerClosedException extends IllegalStateException {
 
     /**
-     * Constructs a SchedulerClosedException
+     * Constructs a new {@code SchedulerClosedException}.
      *
-     * @param scheduler the closed scheduler
+     * @param scheduler the scheduler that has been shut down
      */
     public SchedulerClosedException(@NotNull final Scheduler scheduler) {
         super("Scheduler " + scheduler.getName() + " is closed.");

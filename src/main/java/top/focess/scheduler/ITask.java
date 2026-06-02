@@ -11,13 +11,6 @@ interface ITask extends Task {
 
     Duration getPeriod();
 
-    void setNativeTask(ComparableTask task);
-
-    default void cancel0() {
-        ((AScheduler) this.getScheduler()).cancel(this);
-        this.clear();
-    }
-
     void clear();
 
     void startRun();

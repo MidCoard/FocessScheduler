@@ -7,28 +7,31 @@ import java.util.concurrent.*;
 import java.util.function.Function;
 
 /**
- * The wrapped callback. You can use this to handle callable processing
+ * A handle to a scheduled callable task that produces a value.
+ * <p>
+ * Extends {@link Task} with the ability to retrieve the computed result and implements
+ * {@link Future} for compatibility with standard Java concurrency APIs.
  *
- * @param <V> the target value type
+ * @param <V> the result type
  */
 public interface Callback<V> extends Task, Future<V> {
 
     /**
-     * Call the target value
+     * Returns the computed result, blocking until the task completes if necessary.
      *
-     * @return the target value
-     * @throws CancellationException    if the task is cancelled
-     * @throws TaskNotFinishedException if the task is not finished
-     * @throws ExecutionException       if there is any exception in the execution processing
+     * @return the computed value
+     * @throws CancellationException    if the task was cancelled
+     * @throws TaskNotFinishedException if the task has not yet finished
+     * @throws ExecutionException       if the task threw an exception
      */
     V call() throws ExecutionException, CancellationException, TaskNotFinishedException;
 
     /**
-     * Wait for this task finished and call the target value
+     * Waits for the task to finish, then returns the computed result.
      *
-     * @return the target value
+     * @return the computed value
      * @throws InterruptedException if the current thread was interrupted while waiting
-     * @throws ExecutionException   if there is any exception in the execution processing
+     * @throws ExecutionException   if the task threw an exception
      * @see #join()
      */
     default V waitCall() throws InterruptedException, ExecutionException {
@@ -37,9 +40,9 @@ public interface Callback<V> extends Task, Future<V> {
     }
 
     /**
-     * Indicate whether this task is done or not
+     * Returns {@code true} if the task has finished.
      *
-     * @return true if this task is finished, false otherwise
+     * @return {@code true} if the task is finished, {@code false} otherwise
      * @see #isFinished()
      */
     @Override
@@ -48,11 +51,11 @@ public interface Callback<V> extends Task, Future<V> {
     }
 
     /**
-     * Wait for this task finished and call the target value
+     * Waits for the task to finish if necessary, then returns the computed result.
      *
-     * @return the target value
+     * @return the computed value
      * @throws InterruptedException if the current thread was interrupted while waiting
-     * @throws ExecutionException   if there is any exception in the execution processing
+     * @throws ExecutionException   if the task threw an exception
      * @see #waitCall()
      * @see #join()
      */
@@ -62,15 +65,15 @@ public interface Callback<V> extends Task, Future<V> {
     }
 
     /**
-     * Wait for the time and call the target value
+     * Waits for at most the given time for the task to finish, then returns the computed result.
      *
-     * @param timeout the timeout
-     * @param unit    the time unit
-     * @return the target value
+     * @param timeout the maximum time to wait
+     * @param unit    the time unit of the timeout argument
+     * @return the computed value
      * @throws InterruptedException  if the current thread was interrupted while waiting
-     * @throws ExecutionException    if there is any exception in the execution processing
-     * @throws TimeoutException      if the time is out
-     * @throws CancellationException if the task is cancelled
+     * @throws ExecutionException    if the task threw an exception
+     * @throws TimeoutException      if the wait timed out
+     * @throws CancellationException if the task was cancelled
      * @see #join(long, TimeUnit)
      */
     @Override
@@ -81,11 +84,12 @@ public interface Callback<V> extends Task, Future<V> {
     }
 
     /**
-     * Set the exception handler
+     * Sets the exception handler for this callback.
      * <p>
-     * Note: this handler will clear the exception mark of this task
+     * When the task throws an exception, the handler is invoked and its return value
+     * is used as the result of {@link #call()}, effectively suppressing the exception.
      *
-     * @param handler the exception handler, the {@link Function} return value will be used in the {@link #call()} method
+     * @param handler the exception handler
      */
     void setExceptionHandler(Function<ExecutionException,V> handler);
 }

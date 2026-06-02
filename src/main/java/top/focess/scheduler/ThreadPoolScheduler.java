@@ -3,7 +3,6 @@ package top.focess.scheduler;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.jetbrains.annotations.Nullable;
-import top.focess.scheduler.exceptions.TaskNotFoundError;
 
 import java.util.List;
 import java.util.Map;
@@ -14,43 +13,45 @@ public class ThreadPoolScheduler extends AScheduler {
     final Map<ITask, ThreadPoolSchedulerThread> taskThreadMap = Maps.newConcurrentMap(); // can be opt to Non-Concurrent, use synchronized
     private final List<ThreadPoolSchedulerThread> threads = Lists.newCopyOnWriteArrayList();
     private final boolean immediate;
-    private final boolean isDaemon;
     private int currentThread;
 
     protected final Object AVAILABLE_THREAD_LOCK = new Object();
 
     /**
-     * The uncaught exception handler
+     * The uncaught exception handler for worker threads.
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
 
     /**
-     * New a ThreadPoolScheduler, the scheduler can run tasks in parallel.
-     * The next task will be executed immediately if the immediate is true, otherwise the next task will be executed when there is an available thread.
-     * As a result, the task running in this scheduler can be cancelled if it is already running.
+     * Creates a new {@code ThreadPoolScheduler}.
+     * <p>
+     * This is a multi-threaded scheduler: tasks are dispatched to a pool of worker threads
+     * and execute in parallel. A running task can be cooperatively cancelled via
+     * {@link Task#cancel(boolean) cancel(true)}, which interrupts the worker thread
+     * executing it.
      *
-     * @param poolSize  the thread pool size
-     * @param immediate true if the scheduler should run immediately, false otherwise
+     * @param poolSize  the number of worker threads
+     * @param immediate if {@code true}, the pool expands dynamically when all workers are busy;
+     *                  if {@code false}, tasks wait for an available worker
      * @param name      the scheduler name
-     * @param isDaemon  true if the scheduler is a daemon thread, false otherwise
+     * @param isDaemon  {@code true} to create daemon worker threads
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name,final boolean isDaemon) {
         super(name);
+        this.immediate = immediate;
         for (int i = 0; i < poolSize; i++)
             this.threads.add(new ThreadPoolSchedulerThread(this, this.getName() + "-" + i));
         Thread thread = new SchedulerThread(this.getName());
         thread.setDaemon(isDaemon);
         thread.start();
-        this.immediate = immediate;
-        this.isDaemon = isDaemon;
     }
 
     /**
-     * New a ThreadPoolScheduler with some default configuration (not daemon).
+     * Creates a new {@code ThreadPoolScheduler} with non-daemon worker threads.
      *
-     * @param poolSize  the thread pool size
-     * @param immediate true if the scheduler should run immediately, false otherwise
+     * @param poolSize  the number of worker threads
+     * @param immediate if {@code true}, the pool expands dynamically when all workers are busy
      * @param name      the scheduler name
      */
     public ThreadPoolScheduler(final int poolSize, final boolean immediate, final String name) {
@@ -58,13 +59,16 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     /**
-     * New a ThreadPoolScheduler with some default configuration (not immediate, not daemon).
-     * @param prefix the prefix of the scheduler name
-     * @param poolSize the thread pool size
+     * Creates a new {@code ThreadPoolScheduler} with non-immediate, non-daemon defaults
+     * and an auto-generated name.
+     *
+     * @param prefix   the prefix for the generated scheduler name
+     * @param poolSize the number of worker threads
      */
     public ThreadPoolScheduler(final String prefix, final int poolSize) {
         this(poolSize, false, prefix + "-ThreadPoolScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
+
     @Override
     public synchronized void shutdown() {
         super.shutdown();
@@ -76,7 +80,7 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     @Override
-    public void shutdownNow() {
+    public synchronized void shutdownNow() {
         super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
@@ -85,30 +89,12 @@ public class ThreadPoolScheduler extends AScheduler {
         this.notify();
     }
 
-    @Override
-    public void cancel(final ITask task) {
-        if (this.taskThreadMap.containsKey(task)) {
-            this.taskThreadMap.get(task).cancel();
-            this.taskThreadMap.remove(task);
-        } else throw new TaskNotFoundError(task);
-    }
-
-    public void recreate(final String name) {
-        for (int i = 0; i < this.threads.size(); i++)
-            if (this.threads.get(i).getName().equals(name)) {
-                this.threads.set(i, new ThreadPoolSchedulerThread(this, name));
-                synchronized (this.AVAILABLE_THREAD_LOCK) {
-                    this.AVAILABLE_THREAD_LOCK.notify();
-                }
-                break;
-            }
-    }
-
-    public synchronized void rerun(final ITask task) {
+    synchronized void rerun(final FocessTask task) {
         if (this.shouldStop)
             return;
         task.clear();
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + task.getPeriod().toMillis(), task));
+        task.setTime(System.currentTimeMillis() + task.getPeriod().toMillis());
+        this.tasks.add(task);
         this.notify();
     }
 
@@ -121,17 +107,17 @@ public class ThreadPoolScheduler extends AScheduler {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
     }
 
-    private synchronized void wait0(long timeout) throws InterruptedException {
-        if (timeout <= 0)
-            return;
-        this.wait(timeout);
+    @Override
+    protected void interruptTaskIfRunning(final FocessTask task) {
+        final ThreadPoolSchedulerThread thread = this.taskThreadMap.get(task);
+        if (thread != null)
+            thread.interrupt();
     }
 
     private class SchedulerThread extends Thread {
 
         public SchedulerThread(final String name) {
             super(name);
-            this.setDaemon(isDaemon);
             this.setUncaughtExceptionHandler((t, e) -> {
                 ThreadPoolScheduler.this.shutdown();
                 if (ThreadPoolScheduler.this.getUncaughtExceptionHandler() != null)
@@ -160,7 +146,7 @@ public class ThreadPoolScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
-                    final ComparableTask task;
+                    final FocessTask task;
                     synchronized (ThreadPoolScheduler.this) {
                         if (ThreadPoolScheduler.this.shouldStop)
                             break;
@@ -169,12 +155,13 @@ public class ThreadPoolScheduler extends AScheduler {
                         task = ThreadPoolScheduler.this.tasks.poll();
                         // if task is null, means the scheduler is closed
                         if (task != null && !task.isCancelled()) {
-                            ThreadPoolScheduler.this.wait0(task.getTime() - System.currentTimeMillis());
+                            final long now = System.currentTimeMillis();
+                            ThreadPoolScheduler.this.wait0(task.getTime() - now);
                             if (task.getTime() > System.currentTimeMillis()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
                                 continue;
                             }
-                            final ComparableTask peek = ThreadPoolScheduler.this.tasks.peek();
+                            final FocessTask peek = ThreadPoolScheduler.this.tasks.peek();
                             if (peek != null && peek.getTime() < task.getTime()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
                                 continue;
@@ -200,14 +187,15 @@ public class ThreadPoolScheduler extends AScheduler {
                             continue;
                         }
                     }
-                    synchronized (task.getTask()) {
+                    synchronized (task) {
                         if (task.isCancelled())
                             continue;
-                        ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
-                        thread.startTask(task.getTask());
+                        ThreadPoolScheduler.this.taskThreadMap.put(task, thread);
+                        thread.startTask(task);
                     }
                 } catch (final Exception e) {
-                    e.printStackTrace();
+                    e.printStackTrace(System.err);
+                    shutdown();
                 }
             }
         }

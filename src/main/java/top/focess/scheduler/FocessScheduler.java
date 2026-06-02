@@ -9,21 +9,24 @@ public class FocessScheduler extends AScheduler {
     private final SchedulerThread thread;
 
     /**
-     * New a FocessScheduler with some default configuration (not daemon).
+     * Creates a new {@code FocessScheduler} with a non-daemon scheduler thread.
      *
-     * @param name the plugin
+     * @param name the scheduler name
      */
     public FocessScheduler(final String name) {
         this(name, false);
     }
 
     /**
-     * New a FocessScheduler, the scheduler will run all tasks in time order.
-     * For example, if the finish-time of the last task is after the start-time of the next task, the next task will only be executed after the last task is finished.
-     * As a result, the task running in this scheduler cannot be cancelled if it is already running.
+     * Creates a new {@code FocessScheduler}.
+     * <p>
+     * This is a single-threaded scheduler: all tasks are executed sequentially in time order.
+     * If a task runs longer than expected, subsequent tasks are delayed accordingly.
+     * A running task can be cooperatively cancelled via {@link Task#cancel(boolean) cancel(true)},
+     * which interrupts the scheduler thread.
      *
-     * @param name the plugin
-     * @param isDaemon whether the scheduler is a daemon thread
+     * @param name     the scheduler name
+     * @param isDaemon {@code true} to create a daemon scheduler thread
      */
     public FocessScheduler(final String name, boolean isDaemon) {
         super(name);
@@ -32,6 +35,12 @@ public class FocessScheduler extends AScheduler {
         this.thread.start();
     }
 
+    /**
+     * Creates a new {@code FocessScheduler} whose name is auto-generated from the given prefix.
+     *
+     * @param prefix the prefix for the generated scheduler name
+     * @return a new non-daemon {@code FocessScheduler}
+     */
     public static FocessScheduler newPrefixFocessScheduler(final String prefix) {
         return new FocessScheduler(prefix + "-FocessScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
@@ -53,36 +62,23 @@ public class FocessScheduler extends AScheduler {
     }
 
     @Override
-    public void cancel(final ITask task) {
-        // FocessScheduler runs tasks one-at-a-time on its single scheduler thread, so cancelling
-        // the running task means interrupting that thread. Only interrupt when the requested task
-        // is actually the one currently executing, otherwise we could disturb an unrelated task or
-        // the scheduler's wait state. The task must cooperate by reacting to the interrupt (e.g.
-        // letting InterruptedException propagate or returning); the scheduler thread clears any
-        // leftover interrupt before picking up the next task.
-        final ComparableTask current = this.thread.task;
-        if (current != null && current.getTask() == task)
+    protected synchronized void interruptTaskIfRunning(final FocessTask task) {
+        if (this.thread.task == task)
             this.thread.interrupt();
-    }
-
-    private synchronized void wait0(long timeout) throws InterruptedException {
-        if (timeout <= 0)
-            return;
-        this.wait(timeout);
     }
 
     private class SchedulerThread extends Thread {
 
         @Nullable
-        private ComparableTask task;
+        private FocessTask task;
 
         public SchedulerThread(final String name) {
             super(name);
             this.setUncaughtExceptionHandler((t, e) -> {
                 FocessScheduler.this.shutdown();
                 if (this.task != null) {
-                    this.task.getTask().setException(new ExecutionException(e));
-                    this.task.getTask().endRun();
+                    this.task.setException(new ExecutionException(e));
+                    this.task.endRun();
                 }
                 this.task = null;
                 if (FocessScheduler.this.getUncaughtExceptionHandler() != null)
@@ -104,49 +100,51 @@ public class FocessScheduler extends AScheduler {
                         if (FocessScheduler.this.tasks.isEmpty())
                             FocessScheduler.this.wait();
                         this.task = FocessScheduler.this.tasks.poll();
-                        // if task is null, means the scheduler is closed
+                        // if task is null, the scheduler may be stopped, continue to loopback and check shouldStop
                         if (this.task != null && !this.task.isCancelled()) {
-                            FocessScheduler.this.wait0(this.task.getTime() - System.currentTimeMillis());
+                            final long now = System.currentTimeMillis();
+                            FocessScheduler.this.wait0(this.task.getTime() - now);
                             if (this.task.getTime() > System.currentTimeMillis()) {
                                 FocessScheduler.this.tasks.add(this.task);
                                 continue;
                             }
-                            final ComparableTask task = FocessScheduler.this.tasks.peek();
+                            final FocessTask task = FocessScheduler.this.tasks.peek();
+                            // in fact, here is no need to compare the time of the next task, but we need to make sure the order
+                            // of the tasks execution meets the user time order
                             if (task != null && task.getTime() < this.task.getTime()) {
                                 FocessScheduler.this.tasks.add(this.task);
                                 continue;
                             }
                         } else continue;
                     }
-                    synchronized (this.task.getTask()) {
+                    synchronized (this.task) {
                         if (this.task.isCancelled())
                             continue;
-                        this.task.getTask().startRun();
+                        this.task.startRun();
                     }
                     try {
-                        this.task.getTask().run();
-                    } catch (final Throwable e) {
-                        this.task.getTask().setException(new ExecutionException(e));
+                        this.task.run();
+                    } catch (final ExecutionException e) {
+                        this.task.setException(e);
                     } finally {
                         // consume any interrupt raised by cancel(true) so it does not leak into
                         // the scheduler thread's next wait() and spin the run loop
                         Thread.interrupted();
                     }
-                    this.task.getTask().endRun();
-                    if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
-                        // equivalent to the AScheduler#runTimer method (first check whether the scheduler is closed)
-                        if (FocessScheduler.this.shouldStop) {
-                            this.task = null;
-                            return;
-                        }
-                        this.task.getTask().clear();
+                    this.task.endRun();
+                    if (this.task.isPeriod() && !this.task.isCancelled()) {
+                        this.task.clear();
                         synchronized (FocessScheduler.this) {
-                            FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
+                            this.task.setTime(System.currentTimeMillis() + this.task.getPeriod().toMillis());
+                            FocessScheduler.this.tasks.add(this.task);
                         }
                     }
-                    this.task = null;
+                    synchronized (FocessScheduler.this) {
+                        this.task = null;
+                    }
                 } catch (final Exception e) {
-                    e.printStackTrace();
+                    e.printStackTrace(System.err);
+                    shutdown();
                 }
             }
         }
