@@ -5,6 +5,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
+import top.focess.scheduler.exceptions.SchedulerClosedException;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
@@ -106,13 +108,13 @@ public class TestUtil {
     }
 
     @RepeatedTest(5)
-    void testScheduler3() {
-        Scheduler scheduler = new ThreadPoolScheduler( 5,false,"test-3");
+    void testSchedulerTaskException() {
+        final Scheduler scheduler = new ThreadPoolScheduler(5, false, "test-exception");
 
-        Task task = scheduler.run(()->{
+        final Task task = scheduler.run(() -> {
             try {
                 sleep(1000);
-            } catch (InterruptedException e) {
+            } catch (final InterruptedException e) {
                 fail();
             }
             throw new NullPointerException();
@@ -120,37 +122,54 @@ public class TestUtil {
 
         assertThrows(ExecutionException.class, task::join);
         assertTrue(task.isFinished());
+        scheduler.shutdown();
+    }
 
-        Task task1 = scheduler.run(()->{
+    @RepeatedTest(5)
+    void testSchedulerExceptionHandler() {
+        final Scheduler scheduler = new ThreadPoolScheduler(5, false, "test-handler");
+        final AtomicInteger count = new AtomicInteger(0);
+        final List<Task> tasks = Lists.newArrayList();
+        for (int i = 0; i < 5; i++) {
+            final int delay = i;
+            tasks.add(scheduler.run(() -> {
+                try {
+                    sleep(1000 * delay);
+                } catch (final InterruptedException e) {
+                    fail();
+                }
+                throw new RuntimeException();
+            }, "test-" + i, executionException -> {
+                assertInstanceOf(RuntimeException.class, executionException.getCause());
+                count.incrementAndGet();
+            }));
+        }
+        for (final Task task : tasks)
+            assertDoesNotThrow(() -> task.join());
+        assertEquals(5, count.get());
+        scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("an uncaught Error in a worker task shuts down the scheduler")
+    void testSchedulerInternalErrorShutsDown() throws InterruptedException {
+        final ThreadPoolScheduler scheduler = new ThreadPoolScheduler(2, false, "test-error-shutdown");
+
+        scheduler.run(() -> {
             try {
-                sleep(1000);
-            } catch (InterruptedException e) {
+                sleep(500);
+            } catch (final InterruptedException e) {
                 fail();
             }
             throw new InternalError();
         });
-        assertThrows(ExecutionException.class, task::join);
-        assertTrue(task.isFinished());
-        AtomicInteger count = new AtomicInteger(0);
-        List<Task> tasks = Lists.newArrayList();
-        for (int i = 0; i<5;i++) {
-            int finalI = i;
-            tasks.add(scheduler.run(()->{
-                try {
-                    sleep(1000 * (finalI));
-                } catch (InterruptedException e) {
-                    fail();
-                }
-                throw new InternalError();
-            }, "test-" + i, (executionException)->{
-                assertInstanceOf(InternalError.class, executionException.getCause());
-                count.incrementAndGet();
-            }));
-        }
-        for (Task task2 : tasks)
-            assertDoesNotThrow(()->task2.join());
-        assertEquals(5, count.get());
-        scheduler.shutdown();
+
+        // give the worker time to hit the error and the UCE handler to call scheduler.shutdown()
+        sleep(1500);
+        assertTrue(scheduler.isShutdown());
+
+        // submitting a new task on a shut-down scheduler must throw
+        assertThrows(SchedulerClosedException.class, () -> scheduler.run(() -> {}));
     }
 
     @Test
@@ -192,6 +211,7 @@ public class TestUtil {
 
         andTaskPool.join();
         assertTrue(flag.get());
+        threadPoolScheduler.shutdown();
     }
 
     @Test

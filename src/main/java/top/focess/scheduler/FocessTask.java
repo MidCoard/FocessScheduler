@@ -130,7 +130,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
         if (this.handler != null)
             try {
                 this.handler.accept(e);
-            } catch (final Exception ignored) {
+            } catch (final Throwable ignored) {
                 this.exception = e;
             }
         else this.exception = e;

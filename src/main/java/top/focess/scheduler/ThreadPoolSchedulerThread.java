@@ -25,16 +25,20 @@ public class ThreadPoolSchedulerThread extends Thread {
         this.scheduler = scheduler;
         this.name = name;
         this.setUncaughtExceptionHandler((t, e) -> {
-            this.shutdown();
-            if (this.task != null) {
-                this.task.setException(new ExecutionException(e));
-                this.task.endRun();
-                scheduler.taskThreadMap.remove(this.task);
+            try {
+                this.shutdown();
+                if (this.task != null) {
+                    this.task.setException(new ExecutionException(e));
+                    this.task.endRun();
+                    scheduler.taskThreadMap.remove(this.task);
+                }
+                this.task = null;
+                if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
+                    this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
+                this.scheduler.shutdown();
+            } catch (final Throwable ex) {
+                ex.printStackTrace(System.err);
             }
-            this.task = null;
-            if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
-                this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
-            this.scheduler.shutdown();
         });
         this.setDaemon(true);
         this.start();
@@ -55,8 +59,8 @@ public class ThreadPoolSchedulerThread extends Thread {
                 if (this.task != null) {
                     try {
                         this.task.run();
-                    } catch (final Exception e) {
-                        this.task.setException(new ExecutionException(e));
+                    } catch (final ExecutionException e) {
+                        this.task.setException(e);
                     } finally {
                         // consume any pending interrupt raised by cancel()/shutdownNow() so it does
                         // not leak into the next task this worker picks up

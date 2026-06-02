@@ -54,7 +54,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
         if (this.handler != null)
             try {
                 this.value = this.handler.apply(e);
-            } catch (final Exception ignored) {
+            } catch (final Throwable ignored) {
                 this.exception = e;
             }
         else this.exception = e;
