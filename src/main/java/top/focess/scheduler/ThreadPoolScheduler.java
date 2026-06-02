@@ -3,7 +3,6 @@ package top.focess.scheduler;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.jetbrains.annotations.Nullable;
-import top.focess.scheduler.exceptions.TaskNotFoundError;
 
 import java.util.List;
 import java.util.Map;
@@ -100,7 +99,8 @@ public class ThreadPoolScheduler extends AScheduler {
         if (this.shouldStop)
             return;
         task.clear();
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + task.getPeriod().toMillis(), task));
+        ((FocessTask) task).setTime(System.currentTimeMillis() + task.getPeriod().toMillis());
+        this.tasks.add((FocessTask) task);
         this.notify();
     }
 
@@ -111,6 +111,13 @@ public class ThreadPoolScheduler extends AScheduler {
 
     public void setThreadUncaughtExceptionHandler(final Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
         this.uncaughtExceptionHandler = uncaughtExceptionHandler;
+    }
+
+    @Override
+    protected void interruptTaskIfRunning(final FocessTask task) {
+        final ThreadPoolSchedulerThread thread = this.taskThreadMap.get(task);
+        if (thread != null)
+            thread.cancel();
     }
 
     private synchronized void wait0(long timeout) throws InterruptedException {
@@ -152,7 +159,7 @@ public class ThreadPoolScheduler extends AScheduler {
         public void run() {
             while (true) {
                 try {
-                    final ComparableTask task;
+                    final FocessTask task;
                     synchronized (ThreadPoolScheduler.this) {
                         if (ThreadPoolScheduler.this.shouldStop)
                             break;
@@ -166,7 +173,7 @@ public class ThreadPoolScheduler extends AScheduler {
                                 ThreadPoolScheduler.this.tasks.add(task);
                                 continue;
                             }
-                            final ComparableTask peek = ThreadPoolScheduler.this.tasks.peek();
+                            final FocessTask peek = ThreadPoolScheduler.this.tasks.peek();
                             if (peek != null && peek.getTime() < task.getTime()) {
                                 ThreadPoolScheduler.this.tasks.add(task);
                                 continue;
@@ -192,11 +199,11 @@ public class ThreadPoolScheduler extends AScheduler {
                             continue;
                         }
                     }
-                    synchronized (task.getTask()) {
+                    synchronized (task) {
                         if (task.isCancelled())
                             continue;
-                        ThreadPoolScheduler.this.taskThreadMap.put(task.getTask(), thread);
-                        thread.startTask(task.getTask());
+                        ThreadPoolScheduler.this.taskThreadMap.put(task, thread);
+                        thread.startTask(task);
                     }
                 } catch (final Exception e) {
                     e.printStackTrace();

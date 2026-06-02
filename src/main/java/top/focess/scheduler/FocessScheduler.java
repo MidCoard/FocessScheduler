@@ -52,6 +52,12 @@ public class FocessScheduler extends AScheduler {
         this.thread.interrupt();
     }
 
+    @Override
+    protected synchronized void interruptTaskIfRunning(final FocessTask task) {
+        if (this.thread.task == task)
+            this.thread.interrupt();
+    }
+
     private synchronized void wait0(long timeout) throws InterruptedException {
         if (timeout <= 0)
             return;
@@ -61,15 +67,15 @@ public class FocessScheduler extends AScheduler {
     private class SchedulerThread extends Thread {
 
         @Nullable
-        private ComparableTask task;
+        private FocessTask task;
 
         public SchedulerThread(final String name) {
             super(name);
             this.setUncaughtExceptionHandler((t, e) -> {
                 FocessScheduler.this.shutdown();
                 if (this.task != null) {
-                    this.task.getTask().setException(new ExecutionException(e));
-                    this.task.getTask().endRun();
+                    this.task.setException(new ExecutionException(e));
+                    this.task.endRun();
                 }
                 this.task = null;
                 if (FocessScheduler.this.getUncaughtExceptionHandler() != null)
@@ -98,7 +104,7 @@ public class FocessScheduler extends AScheduler {
                                 FocessScheduler.this.tasks.add(this.task);
                                 continue;
                             }
-                            final ComparableTask task = FocessScheduler.this.tasks.peek();
+                            final FocessTask task = FocessScheduler.this.tasks.peek();
                             // in fact, here is no need to compare the time of the next task, but we need to make sure the order
                             // of the tasks execution meets the user time order
                             if (task != null && task.getTime() < this.task.getTime()) {
@@ -107,35 +113,32 @@ public class FocessScheduler extends AScheduler {
                             }
                         } else continue;
                     }
-                    synchronized (this.task.getTask()) {
+                    synchronized (this.task) {
                         if (this.task.isCancelled())
                             continue;
-                        this.task.getTask().startRun();
+                        this.task.startRun();
                     }
                     try {
-                        this.task.getTask().run();
+                        this.task.run();
                     } catch (final ExecutionException e) {
-                        this.task.getTask().setException(e);
+                        this.task.setException(e);
                     } finally {
                         // consume any interrupt raised by cancel(true) so it does not leak into
                         // the scheduler thread's next wait() and spin the run loop
                         Thread.interrupted();
                     }
-                    this.task.getTask().endRun();
-                    if (this.task.getTask().isPeriod() && !this.task.isCancelled()) {
-                        // equivalent to the AScheduler#runTimer method (first check whether the scheduler is closed)
-                        if (FocessScheduler.this.shouldStop) {
-                            this.task = null;
-                            return;
-                        }
-                        this.task.getTask().clear();
+                    this.task.endRun();
+                    if (this.task.isPeriod() && !this.task.isCancelled()) {
+                        this.task.clear();
                         synchronized (FocessScheduler.this) {
-                            FocessScheduler.this.tasks.add(new ComparableTask(System.currentTimeMillis() + this.task.getTask().getPeriod().toMillis(), this.task.getTask()));
+                            this.task.setTime(System.currentTimeMillis() + this.task.getPeriod().toMillis());
+                            FocessScheduler.this.tasks.add(this.task);
                         }
                     }
                     this.task = null;
                 } catch (final Exception e) {
-                    e.printStackTrace();
+                    e.printStackTrace(System.err);
+                    break;
                 }
             }
         }

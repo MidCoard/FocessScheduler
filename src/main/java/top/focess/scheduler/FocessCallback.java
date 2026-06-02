@@ -14,17 +14,17 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     private V value;
     private Function<ExecutionException, V> handler;
 
-    FocessCallback(final Callable<V> callback, final Scheduler scheduler, final String name) {
+    FocessCallback(final Callable<V> callback, final AScheduler scheduler, final String name) {
         super(null, scheduler, name);
         this.callback = callback;
     }
 
-    FocessCallback(final Callable<V> callback, final Scheduler scheduler) {
+    FocessCallback(final Callable<V> callback, final AScheduler scheduler) {
         super(null, scheduler);
         this.callback = callback;
     }
 
-    FocessCallback(final Callable<V> callback, final Scheduler scheduler, final String name, final Function<ExecutionException, V> handler) {
+    FocessCallback(final Callable<V> callback, final AScheduler scheduler, final String name, final Function<ExecutionException, V> handler) {
         this(callback, scheduler, name);
         this.handler = handler;
     }
@@ -35,8 +35,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
             throw this.exception;
         if (this.isCancelled())
             throw new CancellationException("Task is cancelled");
-        // if the task is cancelled, the task is not finished. So first check if the task is cancelled.
-        if (!this.isFinished)
+        if (!this.isFinished())
             throw new TaskNotFinishedException(this);
         return this.value;
     }
@@ -61,7 +60,6 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
             throw new ExecutionException(e);
         }
     }
-
 
     @Override
     public synchronized void setExceptionHandler(Consumer<ExecutionException> handler) {

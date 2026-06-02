@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
-public class FocessTask implements ITask {
+public class FocessTask implements ITask, Comparable<FocessTask> {
 
     /**
      * Enum representing the possible states of a task
@@ -29,43 +29,43 @@ public class FocessTask implements ITask {
     }
 
     private final Runnable runnable;
-    private final Scheduler scheduler;
+    private final AScheduler scheduler;
     private final String name;
+    private long time;
     private TaskState state = TaskState.PENDING;
 
     protected ExecutionException exception;
     private Duration period;
     private boolean isPeriod;
-    private ComparableTask nativeTask;
     private Consumer<ExecutionException> handler;
     private final List<TaskPool> taskPools = Lists.newCopyOnWriteArrayList();
 
-    FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler, final String name) {
+    FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler, final String name) {
         this.runnable = runnable;
         this.scheduler = scheduler;
         this.name = scheduler.getName() + "-" + name;
     }
 
-    FocessTask(@Nullable final Runnable runnable, @NotNull final Scheduler scheduler) {
+    FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler) {
         this(runnable,scheduler, UUID.randomUUID().toString().substring(0, 8));
     }
 
-    FocessTask(final Runnable runnable, final Scheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
+    FocessTask(final Runnable runnable, final AScheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
         this(runnable, scheduler, name);
         this.handler = handler;
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler) {
+    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler) {
         this(runnable, scheduler);
         this.isPeriod = true;
         this.period = period;
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler, final String name) {
+    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler, final String name) {
         this(runnable, period, scheduler, name, null);
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final Scheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
+    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
         this(runnable, scheduler, name);
         this.isPeriod = true;
         this.period = period;
@@ -73,17 +73,25 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public synchronized void setNativeTask(final ComparableTask nativeTask) {
-        this.nativeTask = nativeTask;
-    }
-
-    @Override
     public synchronized void clear() {
-        // When a periodic task completes, it resets to PENDING for the next execution
+        // Only periodic tasks are reusable; cancellation and terminal finish stay terminal.
         if (this.isPeriod && this.state == TaskState.FINISHED) {
             this.state = TaskState.PENDING;
         }
         this.exception = null;
+    }
+
+    void setTime(final long time) {
+        this.time = time;
+    }
+
+    long getTime() {
+        return time;
+    }
+
+    @Override
+    public int compareTo(@NotNull final FocessTask o) {
+        return Long.compare(this.time, o.time);
     }
 
     @Override
@@ -121,12 +129,16 @@ public class FocessTask implements ITask {
     }
 
     @Override
-    public boolean cancel(final boolean mayInterruptIfRunning) {
-        boolean cancelled = this.nativeTask.cancel(mayInterruptIfRunning);
-        if (cancelled) {
-            this.markCancelled();
-        }
-        return cancelled;
+    public synchronized boolean cancel(final boolean mayInterruptIfRunning) {
+        if (this.state == TaskState.CANCELLED || this.state == TaskState.FINISHED)
+            return false;
+        if (!mayInterruptIfRunning && this.state == TaskState.RUNNING && !this.isPeriod)
+            return false;
+        if (mayInterruptIfRunning && this.state == TaskState.RUNNING)
+            scheduler.interruptTaskIfRunning(this);
+        this.state = TaskState.CANCELLED;
+        this.notifyAll();
+        return true;
     }
 
     @Override
@@ -151,27 +163,16 @@ public class FocessTask implements ITask {
 
     @Override
     public synchronized boolean isFinished() {
-        // A non-periodic task is finished when its state is FINISHED
-        // A periodic task never truly "finishes" in the sense of this method
         return !this.isPeriod && this.state == TaskState.FINISHED;
     }
 
     @Override
     public synchronized boolean isCancelled() {
-        // Check if the task is in CANCELLED state or if the native task is cancelled
-        return this.state == TaskState.CANCELLED || this.nativeTask.isCancelled();
-    }
-
-    /**
-     * Internal method to mark the task as cancelled in the state machine
-     */
-    private synchronized void markCancelled() {
-        this.state = TaskState.CANCELLED;
+        return this.state == TaskState.CANCELLED;
     }
 
     @Override
     public synchronized void join() throws InterruptedException, CancellationException, ExecutionException {
-        // loop to guard against spurious wakeups: only return once a terminal state is reached
         while (true) {
             if (this.exception != null)
                 throw this.exception;

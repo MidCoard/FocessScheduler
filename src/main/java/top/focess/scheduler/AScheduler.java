@@ -1,7 +1,6 @@
 package top.focess.scheduler;
 
 import com.google.common.collect.Lists;
-import com.google.common.collect.Queues;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -11,6 +10,7 @@ import top.focess.scheduler.exceptions.SchedulerClosedException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -26,7 +26,7 @@ public abstract class AScheduler implements Scheduler {
      */
     private Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
 
-    protected final Queue<ComparableTask> tasks = Queues.newPriorityQueue();
+    protected final Queue<FocessTask> tasks = new PriorityQueue<>();
 
     protected volatile boolean shouldStop;
 
@@ -67,7 +67,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -77,7 +78,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this, name);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -87,7 +89,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, period, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -97,7 +100,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, period, this, name);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -107,7 +111,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
+        callback.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(callback);
         this.notify();
         return callback;
     }
@@ -117,7 +122,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this, name);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
+        callback.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(callback);
         this.notify();
         return callback;
     }
@@ -127,7 +133,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessCallback<V> callback = new FocessCallback<>(callable, this, name, handler);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), callback));
+        callback.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(callback);
         this.notify();
         return callback;
     }
@@ -137,7 +144,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, this, name, handler);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -147,7 +155,8 @@ public abstract class AScheduler implements Scheduler {
         if (this.shouldStop)
             throw new SchedulerClosedException(this);
         final FocessTask task = new FocessTask(runnable, period, this, name, handler);
-        this.tasks.add(new ComparableTask(System.currentTimeMillis() + delay.toMillis(), task));
+        task.setTime(System.currentTimeMillis() + delay.toMillis());
+        this.tasks.add(task);
         this.notify();
         return task;
     }
@@ -163,7 +172,7 @@ public abstract class AScheduler implements Scheduler {
 
     @Override
     public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
-        return this.tasks.stream().map(ComparableTask::getTask).collect(Collectors.toUnmodifiableList());
+        return this.tasks.stream().map(task -> (Task) task).toList();
     }
 
     @Override
@@ -175,4 +184,10 @@ public abstract class AScheduler implements Scheduler {
     public String getName() {
         return this.name;
     }
+
+    /**
+     * Best-effort cooperative interruption for a running task.
+     * Implementations should interrupt only when the given task is currently executing.
+     */
+    protected abstract void interruptTaskIfRunning(FocessTask task);
 }
