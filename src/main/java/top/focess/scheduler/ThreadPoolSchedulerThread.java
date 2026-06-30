@@ -35,11 +35,23 @@ public class ThreadPoolSchedulerThread extends Thread {
                 this.task = null;
                 if (this.scheduler.getThreadUncaughtExceptionHandler() != null)
                     this.scheduler.getThreadUncaughtExceptionHandler().uncaughtException(t, e);
+                // BY DESIGN: a single failing task shuts down the entire scheduler.
+                // Rationale: an uncaught exception typically indicates the scheduler or
+                // its tasks are in an unrecoverable state (e.g. OutOfMemoryError, InternalError);
+                // continuing to serve other tasks risks further corruption. To isolate risky
+                // tasks, run them on a dedicated ThreadPoolScheduler instance.
                 this.scheduler.shutdown();
             } catch (final Throwable ex) {
                 ex.printStackTrace(System.err);
             }
         });
+        // BY DESIGN: worker threads are always daemon, regardless of the isDaemon parameter
+        // passed to the ThreadPoolScheduler constructor. Only the dispatcher SchedulerThread
+        // honors isDaemon. Rationale: worker threads are an implementation detail; if the JVM
+        // wants to exit and the dispatcher has already terminated (or has been interrupted),
+        // there is no useful work for the workers to do. Callers that need workers to keep
+        // the JVM alive should hold a reference to the ThreadPoolScheduler and shut it down
+        // explicitly.
         this.setDaemon(true);
         this.start();
     }
@@ -48,6 +60,10 @@ public class ThreadPoolSchedulerThread extends Thread {
     public void run() {
         while (true) {
             try {
+                // Clear any leftover interrupt from a cancelled task so it does not
+                // spin the next wait(). Shutdown does not rely on this flag (it uses
+                // shouldStop + notify), so clearing here cannot swallow a shutdown signal.
+                Thread.interrupted();
                 synchronized (this) {
                     if (this.shouldStop)
                         break;
@@ -95,11 +111,15 @@ public class ThreadPoolSchedulerThread extends Thread {
     }
 
     public synchronized void shutdown() {
+        if (this.shouldStop)
+            return;
         this.shouldStop = true;
         this.notify();
     }
 
     public void shutdownNow() {
+        if (this.shouldStop)
+            return;
         this.shutdown();
         // interrupt the running task so a cooperative task can wind down instead of being
         // killed with the unsafe Thread#stop()

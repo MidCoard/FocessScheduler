@@ -40,7 +40,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     private final Runnable runnable;
     private final AScheduler scheduler;
     private final String name;
-    private long time;
+    private volatile long time;
     private TaskState state = TaskState.PENDING;
 
     protected ExecutionException exception;
@@ -86,7 +86,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
         if (this.period != null && this.state == TaskState.FINISHED) {
             this.state = TaskState.PENDING;
         }
-        this.exception = null;
+        // exception is intentionally preserved across ticks for period tasks
     }
 
     void setTime(final long time) {
@@ -104,6 +104,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     @Override
     public synchronized void startRun() {
+        // must be pending here
         this.state = TaskState.RUNNING;
     }
 
@@ -157,7 +158,7 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     public synchronized boolean cancel(final boolean mayInterruptIfRunning) {
         if (this.state == TaskState.CANCELLED || this.state == TaskState.FINISHED)
             return false;
-        if (!mayInterruptIfRunning && this.state == TaskState.RUNNING && this.period == null)
+        if (this.state == TaskState.RUNNING && !mayInterruptIfRunning)
             return false;
         if (mayInterruptIfRunning && this.state == TaskState.RUNNING)
             scheduler.interruptTaskIfRunning(this);
@@ -211,7 +212,11 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
 
     @Override
     public synchronized void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
-        final long deadline = System.currentTimeMillis() + unit.toMillis(timeout);
+        final long millisTimeout = unit.toMillis(timeout);
+        final long now = System.currentTimeMillis();
+        final long deadline = (millisTimeout < 0 || millisTimeout > Long.MAX_VALUE - now)
+            ? Long.MAX_VALUE
+            : now + millisTimeout;
         // loop to guard against spurious wakeups and to honor the remaining timeout
         while (true) {
             if (this.exception != null)

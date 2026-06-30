@@ -45,16 +45,41 @@ public class FocessScheduler extends AScheduler {
         return new FocessScheduler(prefix + "-FocessScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
+    /**
+     * Graceful shutdown — by design does NOT interrupt the currently running task.
+     * <p>
+     * {@code shutdown()} marks the scheduler for stop ({@code shouldStop = true}), cancels
+     * every queued task, and notifies the run loop. The scheduler thread, if it is
+     * currently executing a task (i.e. inside {@link FocessTask#run()}), will finish that
+     * task naturally before observing {@code shouldStop} and exiting.
+     * <p>
+     * Callers that need to force-stop a stuck task must use {@link #shutdownNow()}, which
+     * additionally interrupts the scheduler thread. Note that task cancellation is
+     * <em>cooperative</em>: tasks that ignore {@link InterruptedException} will continue
+     * to completion regardless.
+     */
     @Override
     public synchronized void shutdown() {
+        if (this.shouldStop)
+            return;
         super.shutdown();
         this.shouldStop = true;
         this.cancelAll();
         this.notify();
     }
 
+    /**
+     * Forceful shutdown — interrupts the scheduler thread so any running task or
+     * {@code wait()} wakes up and observes {@code shouldStop}.
+     * <p>
+     * See {@link #shutdown()} for the graceful variant. {@code shutdownNow()} does
+     * <em>not</em> forcibly stop a task; it only interrupts, and the task must
+     * cooperate by handling {@link InterruptedException}.
+     */
     @Override
     public synchronized void shutdownNow() {
+        if (this.shouldStop)
+            return;
         this.shutdown();
         // interrupt the scheduler thread so that a blocking task (or wait) wakes up and
         // the run loop can observe shouldStop and terminate cooperatively
@@ -135,14 +160,21 @@ public class FocessScheduler extends AScheduler {
                     if (this.task.isPeriod() && !this.task.isCancelled()) {
                         this.task.clear();
                         synchronized (FocessScheduler.this) {
-                            this.task.setTime(System.currentTimeMillis() + this.task.getPeriod().toMillis());
-                            FocessScheduler.this.tasks.add(this.task);
+                            // atomically check shouldStop and re-add under the scheduler lock
+                            if (FocessScheduler.this.shouldStop) {
+                                // period task cannot re-arm itself during shutdown — mark cancelled so observers see a terminal state
+                                this.task.cancel(false);
+                            } else {
+                                this.task.setTime(System.currentTimeMillis() + this.task.getPeriod().toMillis());
+                                FocessScheduler.this.tasks.add(this.task);
+                            }
                         }
                     }
                     synchronized (FocessScheduler.this) {
                         this.task = null;
                     }
                 } catch (final Exception e) {
+                    // this is an internal error
                     e.printStackTrace(System.err);
                     shutdown();
                 }

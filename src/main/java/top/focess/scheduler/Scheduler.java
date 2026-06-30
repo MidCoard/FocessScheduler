@@ -2,7 +2,6 @@ package top.focess.scheduler;
 
 
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.UnmodifiableView;
 import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.time.Duration;
@@ -192,14 +191,6 @@ public interface Scheduler {
      * @return the exception handler, or {@code null} if none is set
      */
     @Nullable Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
-
-    /**
-     * Returns the tasks still pending execution.
-     *
-     * @return an unmodifiable view of the pending tasks
-     */
-    @UnmodifiableView
-    List<Task> getRemainingTasks();
 
     /**
      * Runs a task immediately with the given name and exception handler.

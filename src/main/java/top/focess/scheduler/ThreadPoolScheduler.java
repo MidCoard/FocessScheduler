@@ -71,8 +71,14 @@ public class ThreadPoolScheduler extends AScheduler {
 
     @Override
     public synchronized void shutdown() {
+        if (this.shouldStop)
+            return;
         super.shutdown();
         this.shouldStop = true;
+        // Wake the SchedulerThread first so it observes shouldStop on its next loop iteration
+        synchronized (this.AVAILABLE_THREAD_LOCK) {
+            this.AVAILABLE_THREAD_LOCK.notifyAll();
+        }
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
             thread.shutdown();
@@ -81,8 +87,13 @@ public class ThreadPoolScheduler extends AScheduler {
 
     @Override
     public synchronized void shutdownNow() {
+        if (this.shouldStop)
+            return;
         super.shutdown();
         this.shouldStop = true;
+        synchronized (this.AVAILABLE_THREAD_LOCK) {
+            this.AVAILABLE_THREAD_LOCK.notifyAll();
+        }
         this.cancelAll();
         for (final ThreadPoolSchedulerThread thread : this.threads)
             thread.shutdownNow();
@@ -90,8 +101,11 @@ public class ThreadPoolScheduler extends AScheduler {
     }
 
     synchronized void rerun(final FocessTask task) {
-        if (this.shouldStop)
+        if (this.shouldStop) {
+            // period task cannot re-arm itself during shutdown — mark cancelled so observers see a terminal state
+            task.cancel(false);
             return;
+        }
         task.clear();
         task.setTime(System.currentTimeMillis() + task.getPeriod().toMillis());
         this.tasks.add(task);
@@ -127,8 +141,9 @@ public class ThreadPoolScheduler extends AScheduler {
 
         @Nullable
         private ThreadPoolSchedulerThread getAvailableThread() {
-            for (int i = 1; i <= ThreadPoolScheduler.this.threads.size(); i++) {
-                final int next = (ThreadPoolScheduler.this.currentThread + i) % ThreadPoolScheduler.this.threads.size();
+            final int size = ThreadPoolScheduler.this.threads.size();
+            for (int i = 0; i < size; i++) {
+                final int next = (ThreadPoolScheduler.this.currentThread + 1 + i) % size;
                 if (ThreadPoolScheduler.this.threads.get(next).isAvailable()) {
                     ThreadPoolScheduler.this.currentThread = next;
                     return ThreadPoolScheduler.this.threads.get(next);

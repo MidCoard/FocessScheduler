@@ -173,11 +173,6 @@ public abstract class AScheduler implements Scheduler {
     }
 
     @Override
-    public synchronized @UnmodifiableView List<Task> getRemainingTasks() {
-        return this.tasks.stream().map(task -> (Task) task).toList();
-    }
-
-    @Override
     public synchronized void cancelAll() {
         for (final FocessTask task : this.tasks)
             task.cancel(true);
