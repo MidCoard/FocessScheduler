@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Scheduler lifecycle — shutdown, awaitTermination, cancelPending, ExecutorService bridge")
+@DisplayName("Scheduler lifecycle — shutdown, awaitTermination, shutdownNow, ExecutorService bridge")
 class SchedulerLifecycleTest {
 
     // ---- 1. shutdown() is idempotent ----
@@ -48,9 +48,10 @@ class SchedulerLifecycleTest {
         Task task = scheduler.schedule(() -> {});
         task.join();
         scheduler.shutdown();
-        // Give time for the dispatcher thread to finish
-        Thread.sleep(500);
-        assertTrue(scheduler.isTerminated(), "scheduler should be terminated after shutdown + idle");
+        // Wait for the dispatcher thread to finish (it uses a 1 s poll timeout,
+        // so a fixed sleep shorter than that can race).
+        assertTrue(scheduler.awaitTermination(5, TimeUnit.SECONDS),
+                "scheduler should be terminated after shutdown + idle");
     }
 
     // ---- 4. awaitTermination() returns true ----
@@ -86,11 +87,11 @@ class SchedulerLifecycleTest {
         scheduler.shutdownNow();
     }
 
-    // ---- 6. cancelPending() cancels queued tasks, running unaffected ----
+    // ---- 6. shutdownNow() cancels queued tasks, running unaffected ----
 
     @Test
-    @DisplayName("cancelPending() cancels pending tasks but does not interrupt running tasks")
-    void cancelPendingCancelsQueuedTasks() throws Exception {
+    @DisplayName("shutdownNow() cancels pending tasks but does not interrupt running tasks")
+    void shutdownNowCancelsQueuedTasks() throws Exception {
         ThreadPoolScheduler scheduler = new ThreadPoolScheduler(1, false, "cancel-pending");
         AtomicBoolean runningCompleted = new AtomicBoolean(false);
         AtomicBoolean pendingRan = new AtomicBoolean(false);
@@ -105,15 +106,14 @@ class SchedulerLifecycleTest {
 
         Thread.sleep(500);
         assertTrue(running.isRunning(), "first task should be running");
-        scheduler.cancelPending();
+        scheduler.shutdownNow();
         // The pending task should be cancelled now
         Thread.sleep(500);
         // Wait for the running task to finish
         running.join(5, TimeUnit.SECONDS);
         assertTrue(runningCompleted.get(), "running task should complete");
         // Pending task may or may not be cancelled depending on timing,
-        // but cancelPending should have removed it from the dispatcher queue
-        scheduler.shutdown();
+        // but shutdownNow should have removed it from the dispatcher queue
     }
 
     // ---- 7. Scheduling after shutdown throws on both schedulers ----

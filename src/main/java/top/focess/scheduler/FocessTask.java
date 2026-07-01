@@ -318,6 +318,17 @@ public class FocessTask implements TaskInternal, Delayed {
         return this.exception;
     }
 
+    /**
+     * Returns the {@link Runnable} representation of this task's payload.
+     * For one-shot tasks this is the original {@code Runnable} submitted by the caller;
+     * for callbacks this wraps the {@code Callable} so it can be re-executed.
+     * Used by {@link AbstractScheduler#shutdownNow()} to satisfy the
+     * {@code ExecutorService} contract.
+     */
+    Runnable asRunnable() {
+        return this.runnable;
+    }
+
     // --- Delayed interface ---
 
     @Override

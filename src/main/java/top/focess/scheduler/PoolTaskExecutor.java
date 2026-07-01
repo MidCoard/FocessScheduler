@@ -2,6 +2,7 @@ package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
 
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -16,10 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Supports dynamic expansion ({@code immediate} mode) when all workers are busy,
  * up to an optional {@code maxPoolSize} cap.
  * <p>
- * Each worker is a daemon thread. When a task throws an uncaught {@link Error},
- * the worker dies but the pool relaunches a replacement worker so the pool
- * maintains its core size. The error is reported to the scheduler's
- * {@link Thread.UncaughtExceptionHandler} for logging/monitoring.
+ * Each worker is a daemon thread. Since {@link FocessTask#run()} catches all
+ * {@link Throwable} (including {@link Error}) and wraps them in
+ * {@link ExecutionException}, no exception can escape to the worker loop.
+ * Workers never die from task failures — they simply continue to the next task.
  */
 public class PoolTaskExecutor implements TaskExecutor {
 
@@ -33,6 +34,8 @@ public class PoolTaskExecutor implements TaskExecutor {
     private volatile AbstractScheduler scheduler;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
     private final AtomicInteger runningCount = new AtomicInteger(0);
+    /** All live worker threads, for interrupting on {@code shutdownNow}. */
+    private final Set<Worker> allWorkers = ConcurrentHashMap.newKeySet();
 
     static class WorkItem {
         final FocessTask task;
@@ -64,6 +67,13 @@ public class PoolTaskExecutor implements TaskExecutor {
      * @param maxPoolSize  the maximum number of worker threads (caps unbounded spawning in immediate mode)
      */
     public PoolTaskExecutor(int corePoolSize, boolean immediate, String name, int maxPoolSize) {
+        if (corePoolSize < 0)
+            throw new IllegalArgumentException("corePoolSize must be >= 0");
+        if (maxPoolSize < corePoolSize)
+            throw new IllegalArgumentException("maxPoolSize must be >= corePoolSize");
+        if (corePoolSize == 0 && !immediate)
+            throw new IllegalArgumentException(
+                    "corePoolSize=0 with immediate=false will never execute any task");
         this.corePoolSize = corePoolSize;
         this.immediate = immediate;
         this.name = name;
@@ -94,7 +104,7 @@ public class PoolTaskExecutor implements TaskExecutor {
     public void interruptTask(@NonNull FocessTask task) {
         Worker worker = taskWorkerMap.get(task);
         if (worker != null) {
-            synchronized (worker.taskLock) {
+            synchronized (worker) {
                 // Re-verify under lock: the worker still owns this task
                 if (worker.currentTaskField == task) {
                     worker.interrupt();
@@ -108,8 +118,15 @@ public class PoolTaskExecutor implements TaskExecutor {
         if (shutdown.getAndSet(true))
             return;
         if (now) {
-            // Interrupt all workers so they break out of poll immediately
-            for (Worker w : taskWorkerMap.values()) {
+            // Halt waiting tasks: cancel everything already dispatched but not yet
+            // running, so workers do not pick them up after shutdownNow().
+            WorkItem item;
+            while ((item = workQueue.poll()) != null) {
+                item.task.cancel(true);
+            }
+            // Interrupt all workers (running and idle) so running tasks get a
+            // best-effort stop and idle workers break out of poll() immediately.
+            for (Worker w : allWorkers) {
                 w.interrupt();
             }
         }
@@ -129,14 +146,22 @@ public class PoolTaskExecutor implements TaskExecutor {
 
     private void ensureWorkers() {
         // If all core workers are busy and immediate mode, add a worker (up to maxPoolSize)
-        if (immediate && runningCount.get() >= workerCount.get() && !shutdown.get()) {
+        if (immediate && runningCount.get() >= workerCount.get()) {
             while (true) {
                 int current = workerCount.get();
                 if (current >= maxPoolSize) break;
                 if (workerCount.compareAndSet(current, current + 1)) {
                     Worker worker = new Worker(name + "-worker-" + current);
                     worker.setDaemon(true);
-                    worker.start();
+                    allWorkers.add(worker);
+                    try {
+                        worker.start();
+                    } catch (Throwable t) {
+                        // start() failed — release the reservation.
+                        allWorkers.remove(worker);
+                        workerCount.decrementAndGet();
+                        throw t;
+                    }
                     break;
                 }
                 // CAS failed — another thread modified workerCount; re-check
@@ -144,160 +169,122 @@ public class PoolTaskExecutor implements TaskExecutor {
         }
     }
 
-    private void startWorker() {
-        // Used only during construction for core workers — no CAS needed
-        int idx = workerCount.getAndIncrement();
-        Worker worker = new Worker(name + "-worker-" + idx);
-        worker.setDaemon(true);
-        worker.start();
-    }
-
     /**
-     * Relaunch a replacement worker after one dies (e.g. from an uncaught Error).
-     * The dead worker already decremented workerCount via its exit path, so
-     * we just need to start a new one.
+     * Start a new worker thread, reserving a slot in {@code workerCount} and
+     * registering it in {@code allWorkers}.
      */
-    private void relaunchWorker() {
-        if (shutdown.get()) return;
+    private void startWorker() {
         int idx = workerCount.getAndIncrement();
         Worker worker = new Worker(name + "-worker-" + idx);
         worker.setDaemon(true);
-        worker.start();
+        allWorkers.add(worker);
+        try {
+            worker.start();
+        } catch (Throwable t) {
+            // start() failed (e.g. OOM spawning the thread) — release the slot
+            // and registration so workerCount/allWorkers stay consistent.
+            allWorkers.remove(worker);
+            workerCount.decrementAndGet();
+            throw t;
+        }
     }
 
     class Worker extends Thread {
 
         /** The task currently being executed by this worker, or null. */
         private FocessTask currentTaskField;
-        /** Lock object for atomic check-and-interrupt in {@link PoolTaskExecutor#interruptTask}. */
-        final Object taskLock = new Object();
 
         Worker(String name) {
             super(name);
-            setUncaughtExceptionHandler((t, e) -> {
-                try {
-                    // Clean up the task that was running when the Error occurred.
-                    FocessTask current;
-                    synchronized (taskLock) {
-                        current = currentTaskField;
-                        if (current != null) {
-                            taskWorkerMap.remove(current);
-                            currentTaskField = null;
-                        }
-                    }
-                    if (current != null) {
-                        if (!current.isDone()) {
-                            current.setException(new ExecutionException(e));
-                            current.endRun();
-                        }
-                        runningCount.decrementAndGet();
-                    }
-                    // This worker thread is dead — decrement workerCount so
-                    // relaunchWorker() can increment it back for the replacement.
-                    workerCount.decrementAndGet();
-                    // Report the error to the scheduler's handler for logging/monitoring
-                    AbstractScheduler s = scheduler;
-                    if (s != null && s.getUncaughtExceptionHandler() != null) {
-                        s.getUncaughtExceptionHandler().uncaughtException(t, e);
-                    }
-                    // Relaunch a replacement worker to maintain pool size
-                    relaunchWorker();
-                } catch (Throwable ex) {
-                    ex.printStackTrace(System.err);
-                }
-            });
         }
 
         @Override
         public void run() {
-            while (true) {
-                try {
-                    WorkItem item;
-                    if (workerCount.get() > corePoolSize) {
-                        // Extra worker: use timed poll so we can exit if idle
-                        item = workQueue.poll(5, TimeUnit.SECONDS);
-                        if (item == null) {
-                            // Idle timeout — try to exit this extra worker
-                            while (true) {
-                                int current = workerCount.get();
-                                if (current > corePoolSize) {
-                                    if (workerCount.compareAndSet(current, current - 1)) {
-                                        return; // exit
-                                    }
-                                    // CAS failed — re-check
-                                } else {
-                                    break; // no longer extra — stay as core
-                                }
-                            }
-                            continue;
-                        }
-                    } else {
-                        // Core worker: use timed poll (not take) so we periodically
-                        // check the shutdown flag. take() would block forever if
-                        // shutdown(false) is called with an empty queue, leaking
-                        // the thread.
-                        item = workQueue.poll(1, TimeUnit.SECONDS);
-                        if (item == null) {
-                            // After shutdown, core workers exit only after the dispatcher
-                            // is truly dead — it may still be mid-dispatch.
-                            if (shutdown.get() && workQueue.isEmpty()) {
-                                AbstractScheduler s = scheduler;
-                                if (s != null && !s.getDispatcher().isTerminated()) continue;
-                                return;
-                            }
-                            continue;
-                        }
-                    }
-
-                    FocessTask task = item.task;
-                    if (task.isCancelled()) continue;
-
-                    synchronized (taskLock) {
-                        taskWorkerMap.put(task, this);
-                        currentTaskField = task;
-                    }
-                    runningCount.incrementAndGet();
+            try {
+                while (true) {
                     try {
+                        WorkItem item;
+                        if (workerCount.get() > corePoolSize) {
+                            // Extra worker: use timed poll so we can exit if idle
+                            item = workQueue.poll(5, TimeUnit.SECONDS);
+                            if (item == null) {
+                                // Idle timeout — try to exit this extra worker
+                                while (true) {
+                                    int current = workerCount.get();
+                                    if (current > corePoolSize) {
+                                        if (workerCount.compareAndSet(current, current - 1)) {
+                                            return; // exit
+                                        }
+                                        // CAS failed — re-check
+                                    } else {
+                                        break; // no longer extra — stay as core
+                                    }
+                                }
+                                continue;
+                            }
+                        } else {
+                            // Core worker: use timed poll (not take) so we periodically
+                            // check the shutdown flag. take() would block forever if
+                            // shutdown(false) is called with an empty queue, leaking
+                            // the thread.
+                            item = workQueue.poll(1, TimeUnit.SECONDS);
+                            if (item == null) {
+                                // After shutdown, core workers exit only after the dispatcher
+                                // is truly dead — it may still be mid-dispatch.
+                                if (shutdown.get() && workQueue.isEmpty()) {
+                                    AbstractScheduler s = scheduler;
+                                    if (s != null && !s.getDispatcher().isTerminated()) continue;
+                                    return;
+                                }
+                                continue;
+                            }
+                        }
+
+                        FocessTask task = item.task;
+                        if (task.isCancelled()) continue;
+
+                        synchronized (this) {
+                            taskWorkerMap.put(task, this);
+                            currentTaskField = task;
+                        }
+                        runningCount.incrementAndGet();
                         try {
                             task.run();
                         } catch (ExecutionException e) {
-                            if (e.getCause() instanceof Error) {
-                                task.setException(e);
-                                task.endRun();
-                                throw (Error) e.getCause();
-                            }
                             task.setException(e);
                         }
                         task.endRun();
-                    } finally {
+                        runningCount.decrementAndGet();
                         // Clear the interrupt flag and release the task assignment atomically.
                         // This must be inside the lock so that interruptTask() cannot call
-                        // worker.interrupt() between endRun() and the field clear — which would
-                        // leak a spurious interrupt into the next task on this worker.
-                        synchronized (taskLock) {
+                        // worker.interrupt() between Thread.interrupted() and the field
+                        // clear — which would leak a spurious interrupt into the next
+                        // task on this worker.
+                        synchronized (this) {
                             Thread.interrupted();
                             taskWorkerMap.remove(task);
                             currentTaskField = null;
                         }
-                        runningCount.decrementAndGet();
-                    }
-                    item.completionCallback.run();
-                    // After processing a task, check if we should exit:
-                    // shutdown was called and the queue is empty.
-                    if (shutdown.get() && workQueue.isEmpty()) {
-                        AbstractScheduler s = scheduler;
-                        if (s != null && !s.getDispatcher().isTerminated()) continue;
-                        return;
-                    }
-                } catch (InterruptedException e) {
-                    // shutdownNow() — if shutdown is set, queue is empty, and
-                    // dispatcher is dead, exit
-                    if (shutdown.get() && workQueue.isEmpty()) {
-                        AbstractScheduler s = scheduler;
-                        if (s != null && !s.getDispatcher().isTerminated()) continue;
-                        return;
+                        item.completionCallback.run();
+                        // After processing a task, check if we should exit:
+                        // shutdown was called and the queue is empty.
+                        if (shutdown.get() && workQueue.isEmpty()) {
+                            AbstractScheduler s = scheduler;
+                            if (s != null && !s.getDispatcher().isTerminated()) continue;
+                            return;
+                        }
+                    } catch (InterruptedException e) {
+                        // shutdownNow() — if shutdown is set, queue is empty, and
+                        // dispatcher is dead, exit
+                        if (shutdown.get() && workQueue.isEmpty()) {
+                            AbstractScheduler s = scheduler;
+                            if (s != null && !s.getDispatcher().isTerminated()) continue;
+                            return;
+                        }
                     }
                 }
+            } finally {
+                allWorkers.remove(this);
             }
         }
     }

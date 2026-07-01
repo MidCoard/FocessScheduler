@@ -88,11 +88,6 @@ public interface Scheduler {
     <V> @NonNull Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay, @NonNull String name, @Nullable Function<ExecutionException, V> handler);
 
     /**
-     * Cancels all pending tasks in the queue.
-     */
-    void cancelPending();
-
-    /**
      * Returns the name of this scheduler.
      */
     @NonNull

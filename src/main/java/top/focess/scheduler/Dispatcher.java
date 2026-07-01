@@ -29,16 +29,19 @@ public interface Dispatcher {
     void dispatch(@NonNull FocessTask task);
 
     /**
-     * Cancel all pending (not-yet-dispatched) tasks.
+     * Graceful shutdown: the dispatcher continues to dispatch pending tasks
+     * until the queue is empty, then the thread exits naturally.
      */
-    void cancelPending();
+    void shutdown();
 
     /**
-     * Shutdown the dispatcher.
+     * Immediate shutdown: halts the dispatcher thread, drains and cancels
+     * all pending tasks, and returns them.
      *
-     * @param now if true, halt immediately (cancel pending tasks); if false, let pending tasks drain gracefully
+     * @return the tasks that were awaiting execution
      */
-    void shutdown(boolean now);
+    @NonNull
+    List<FocessTask> shutdownNow();
 
     /**
      * Whether the dispatcher has been shut down.
@@ -46,15 +49,6 @@ public interface Dispatcher {
      * @return {@code true} if shut down, {@code false} otherwise
      */
     boolean isShutdown();
-
-    /**
-     * Drain all pending tasks from the queue (including non-expired) and
-     * cancel them. Returns the list of tasks that were drained.
-     *
-     * @return the tasks that were awaiting execution
-     */
-    @NonNull
-    List<FocessTask> drainPending();
 
     /**
      * Whether the dispatcher thread has fully exited and is no longer

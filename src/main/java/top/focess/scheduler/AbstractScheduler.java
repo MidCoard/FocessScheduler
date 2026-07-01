@@ -204,24 +204,21 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
 
     @Override
     public void shutdown() {
-        dispatcher.shutdown(false);
+        dispatcher.shutdown();
         executor.shutdown(false);
     }
 
     @Override
     @NonNull
     public List<Runnable> shutdownNow() {
-        dispatcher.shutdown(true);
+        List<FocessTask> pending = dispatcher.shutdownNow();
         executor.shutdown(true);
-        // Drain pending tasks from the dispatcher and return them as the
-        // ExecutorService contract requires. Tasks that were already in-flight
-        // on the executor are not included — they have been interrupted.
-        List<FocessTask> pending = dispatcher.drainPending();
+        // Return the pending tasks' runnables as the ExecutorService contract requires.
+        // Tasks that were already in-flight on the executor are not included —
+        // they have been interrupted.
         List<Runnable> result = new ArrayList<>(pending.size());
         for (FocessTask task : pending) {
-            result.add(() -> {
-                try { task.run(); } catch (ExecutionException ignored) {}
-            });
+            result.add(task.asRunnable());
         }
         return result;
     }
@@ -261,11 +258,6 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     public void interruptTaskIfRunning(@NonNull FocessTask task) {
         executor.interruptTask(task);
-    }
-
-    @Override
-    public void cancelPending() {
-        dispatcher.cancelPending();
     }
 
     // --- Name and Thread.UncaughtExceptionHandler ---
