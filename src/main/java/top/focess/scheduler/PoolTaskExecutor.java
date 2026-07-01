@@ -33,6 +33,8 @@ public class PoolTaskExecutor implements TaskExecutor {
     private final String name;
     private volatile AbstractScheduler scheduler;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
+    /** Whether the now-shutdown (drain + interrupt) has been executed. */
+    private final AtomicBoolean halted = new AtomicBoolean(false);
     private final AtomicInteger runningCount = new AtomicInteger(0);
     /** All live worker threads, for interrupting on {@code shutdownNow}. */
     private final Set<Worker> allWorkers = ConcurrentHashMap.newKeySet();
@@ -115,9 +117,8 @@ public class PoolTaskExecutor implements TaskExecutor {
 
     @Override
     public void shutdown(boolean now) {
-        if (shutdown.getAndSet(true))
-            return;
-        if (now) {
+        shutdown.set(true);
+        if (now && halted.compareAndSet(false, true)) {
             // Halt waiting tasks: cancel everything already dispatched but not yet
             // running, so workers do not pick them up after shutdownNow().
             WorkItem item;
@@ -285,6 +286,14 @@ public class PoolTaskExecutor implements TaskExecutor {
                 }
             } finally {
                 allWorkers.remove(this);
+                // Last worker out: if we're shut down, drain any remaining
+                // tasks that no worker will ever pick up.
+                if (shutdown.get() && allWorkers.isEmpty()) {
+                    WorkItem item;
+                    while ((item = workQueue.poll()) != null) {
+                        item.task.cancel(true);
+                    }
+                }
             }
         }
     }

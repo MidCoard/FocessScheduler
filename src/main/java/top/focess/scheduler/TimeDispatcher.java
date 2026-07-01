@@ -106,6 +106,7 @@ public class TimeDispatcher implements Dispatcher {
     @Override
     @NonNull
     public synchronized List<FocessTask> shutdownNow() {
+        if (shutdown) return List.of();
         shutdown = true;
         haltPending = true;
         // Drain all remaining tasks (including non-expired).
