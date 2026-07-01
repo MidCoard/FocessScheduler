@@ -92,7 +92,14 @@ public class PoolTaskExecutor implements TaskExecutor {
     @Override
     public void interruptTask(@NonNull FocessTask task) {
         Worker worker = taskWorkerMap.get(task);
-        if (worker != null) worker.interrupt();
+        if (worker != null) {
+            synchronized (worker.taskLock) {
+                // Re-verify under lock: the worker still owns this task
+                if (worker.currentTaskField == task) {
+                    worker.interrupt();
+                }
+            }
+        }
     }
 
     @Override
@@ -146,7 +153,9 @@ public class PoolTaskExecutor implements TaskExecutor {
     class Worker extends Thread {
 
         /** The task currently being executed by this worker, or null. */
-        private volatile FocessTask currentTaskField;
+        private FocessTask currentTaskField;
+        /** Lock object for atomic check-and-interrupt in {@link PoolTaskExecutor#interruptTask}. */
+        final Object taskLock = new Object();
 
         Worker(String name) {
             super(name);
@@ -157,14 +166,19 @@ public class PoolTaskExecutor implements TaskExecutor {
                     // currentTaskField will already be null (the inline Error path cleaned up
                     // the task, taskWorkerMap, and runningCount before re-throwing).
                     // Only clean up here if the Error bypassed that path (e.g. raw Error).
-                    FocessTask current = currentTaskField;
+                    FocessTask current;
+                    synchronized (taskLock) {
+                        current = currentTaskField;
+                        if (current != null) {
+                            taskWorkerMap.remove(current);
+                            currentTaskField = null;
+                        }
+                    }
                     if (current != null) {
                         if (!current.isDone()) {
                             current.setException(new ExecutionException(e));
                             current.endRun();
                         }
-                        taskWorkerMap.remove(current);
-                        currentTaskField = null;
                         runningCount.decrementAndGet();
                     }
                     // BY DESIGN: a single failing task shuts down the entire scheduler
@@ -211,31 +225,35 @@ public class PoolTaskExecutor implements TaskExecutor {
                     FocessTask task = item.task;
                     if (task.isCancelled()) continue;
 
-                    taskWorkerMap.put(task, this);
-                    currentTaskField = task;
+                    synchronized (taskLock) {
+                        taskWorkerMap.put(task, this);
+                        currentTaskField = task;
+                    }
                     runningCount.incrementAndGet();
                     try {
-                        task.run();
-                    } catch (ExecutionException e) {
-                        // If the cause is an Error (e.g. InternalError, OutOfMemoryError),
-                        // re-throw it so the worker's uncaught exception handler can
-                        // shut down the scheduler. Errors indicate an unrecoverable state.
-                        if (e.getCause() instanceof Error) {
+                        try {
+                            task.run();
+                        } catch (ExecutionException e) {
+                            if (e.getCause() instanceof Error) {
+                                task.setException(e);
+                                task.endRun();
+                                throw (Error) e.getCause();
+                            }
                             task.setException(e);
-                            task.endRun();
+                        }
+                        task.endRun();
+                    } finally {
+                        // Clear the interrupt flag and release the task assignment atomically.
+                        // This must be inside the lock so that interruptTask() cannot call
+                        // worker.interrupt() between endRun() and the field clear — which would
+                        // leak a spurious interrupt into the next task on this worker.
+                        synchronized (taskLock) {
+                            Thread.interrupted();
                             taskWorkerMap.remove(task);
                             currentTaskField = null;
-                            runningCount.decrementAndGet();
-                            throw (Error) e.getCause();
                         }
-                        task.setException(e);
-                    } finally {
-                        Thread.interrupted(); // clear leaked interrupt from cancel(true)
+                        runningCount.decrementAndGet();
                     }
-                    task.endRun();
-                    taskWorkerMap.remove(task);
-                    currentTaskField = null;
-                    runningCount.decrementAndGet();
                     // Skip completion callback for cancelled tasks — the scheduler
                     // should not re-dispatch or report completion for a cancelled task.
                     if (!task.isCancelled()) {

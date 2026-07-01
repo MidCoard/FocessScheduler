@@ -142,16 +142,19 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     // ExecutorService.submit() returns Future<V>. The return types are compatible.
 
     @Override
+    @NonNull
     public <V> Future<V> submit(@NonNull Callable<V> task) {
         return submit(task, Duration.ZERO);
     }
 
     @Override
+    @NonNull
     public Future<?> submit(@NonNull Runnable task) {
         return submit(() -> { task.run(); return null; }, Duration.ZERO);
     }
 
     @Override
+    @NonNull
     public <V> Future<V> submit(@NonNull Runnable task, V result) {
         return submit(() -> { task.run(); return result; }, Duration.ZERO);
     }
@@ -168,10 +171,17 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
 
     /**
      * Called by the Executor when a task has finished execution.
-     * Re-dispatches periodic tasks; one-off tasks are done.
+     * <p>
+     * Re-dispatches periodic tasks unless they are cancelled or have an
+     * unhandled exception (matching the JDK {@code ScheduledExecutorService}
+     * contract: an exception terminates a periodic task).
+     * <p>
+     * If a handler (Consumer or Function) suppressed the exception, the
+     * periodic task continues — this is an opt-in extension beyond the JDK
+     * contract that allows handlers to keep the task alive.
      */
     void onTaskComplete(FocessTask task) {
-        if (task.isPeriod() && !task.isCancelled()) {
+        if (task.isPeriod() && !task.isCancelled() && task.getException() == null) {
             task.clear();
             task.setScheduledTime(System.nanoTime() + task.getPeriod().toNanos());
             try {
@@ -203,7 +213,10 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     public List<Runnable> shutdownNow() {
         dispatcher.shutdown(true);
         executor.shutdown(true);
-        return Collections.emptyList();
+        // Drain pending tasks from the dispatcher and return them as the
+        // ExecutorService contract requires. Tasks that were already in-flight
+        // on the executor are not included — they have been interrupted.
+        return new ArrayList<>(dispatcher.drainPending());
     }
 
     @Override
@@ -213,7 +226,15 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
 
     @Override
     public boolean isTerminated() {
-        return dispatcher.isShutdown() && executor.isIdle();
+        // The scheduler is truly terminated only when:
+        // 1. The dispatcher thread has fully exited (no more dispatching),
+        // 2. The executor has no running tasks left.
+        // Checking just isShutdown() + isIdle() is insufficient because
+        // there's a window where the dispatcher is shut down but still
+        // mid-dispatch (calling onTaskReady → executor.execute), and
+        // the executor hasn't picked up the task yet so isIdle() returns
+        // true even though a task is about to start running.
+        return dispatcher.isTerminated() && executor.isIdle();
     }
 
     @Override

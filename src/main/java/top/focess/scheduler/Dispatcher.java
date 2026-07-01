@@ -2,6 +2,8 @@ package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
 
+import java.util.List;
+
 /**
  * Dispatches tasks based on timing.
  * When a task's scheduled time arrives, the dispatcher notifies the scheduler
@@ -44,4 +46,21 @@ public interface Dispatcher {
      * @return {@code true} if shut down, {@code false} otherwise
      */
     boolean isShutdown();
+
+    /**
+     * Drain all pending tasks from the queue (including non-expired) and
+     * cancel them. Returns the list of tasks that were drained.
+     *
+     * @return the tasks that were awaiting execution
+     */
+    @NonNull
+    List<FocessTask> drainPending();
+
+    /**
+     * Whether the dispatcher thread has fully exited and is no longer
+     * dispatching tasks.
+     *
+     * @return {@code true} if terminated, {@code false} otherwise
+     */
+    boolean isTerminated();
 }

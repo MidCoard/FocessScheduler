@@ -3,13 +3,14 @@ package top.focess.scheduler;
 import org.jspecify.annotations.NonNull;
 import top.focess.scheduler.exceptions.SchedulerClosedException;
 
+import java.util.ArrayList;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Time-based dispatcher using a {@link DelayQueue} for thread-safe priority scheduling.
  * <p>
- * A single dispatcher thread blocks on {@code queue.take()} until a task's scheduled
+ * A single dispatcher thread blocks on {@code queue.poll(timeout)} until a task's scheduled
  * time arrives, then hands the task to the scheduler for execution via
  * {@link AbstractScheduler#onTaskReady(FocessTask)}.
  */
@@ -68,14 +69,6 @@ public class TimeDispatcher implements Dispatcher {
                 // shutdownNow() or cancel signal — loop will check shutdown flag
             }
         }
-        drainAndCancel();
-    }
-
-    private void drainAndCancel() {
-        FocessTask task;
-        while ((task = queue.poll()) != null) {
-            task.cancel(false);
-        }
     }
 
     @Override
@@ -84,10 +77,16 @@ public class TimeDispatcher implements Dispatcher {
         queue.add(task);
     }
 
+    /**
+     * Cancel all pending tasks in the queue, including tasks whose delay
+     * has not yet expired. Uses {@link DelayQueue#drainTo} which removes
+     * all elements regardless of their delay.
+     */
     @Override
     public void cancelPending() {
-        FocessTask task;
-        while ((task = queue.poll()) != null) {
+        ArrayList<FocessTask> tasks = new ArrayList<>();
+        queue.drainTo(tasks);
+        for (FocessTask task : tasks) {
             task.cancel(false);
         }
     }
@@ -96,7 +95,6 @@ public class TimeDispatcher implements Dispatcher {
     public void shutdown(boolean now) {
         if (shutdown.getAndSet(true))
             return;
-        cancelPending();
         if (now) {
             // Immediate shutdown: interrupt the thread to break out of any
             // blocking wait (including an inline task on the dispatcher thread).
@@ -105,6 +103,26 @@ public class TimeDispatcher implements Dispatcher {
         // Graceful shutdown (now=false): the dispatcher thread will notice the
         // shutdown flag on its next poll timeout (within 1 second) — no need
         // to interrupt, which could disturb an inline task.
+    }
+
+    /**
+     * Drain and cancel all pending tasks (including non-expired) from the queue.
+     * Returns the list of tasks that were pending.
+     */
+    List<FocessTask> drainPending() {
+        ArrayList<FocessTask> tasks = new ArrayList<>();
+        queue.drainTo(tasks);
+        for (FocessTask task : tasks) {
+            task.cancel(false);
+        }
+        return tasks;
+    }
+
+    /**
+     * Whether the dispatcher thread has fully exited.
+     */
+    boolean isTerminated() {
+        return !thread.isAlive();
     }
 
     @Override

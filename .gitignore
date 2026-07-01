@@ -1,4 +1,5 @@
 .idea
+.claude
 target
 focess-scheduler-*.jar
 src/test/java/*

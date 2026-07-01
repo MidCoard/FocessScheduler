@@ -21,7 +21,20 @@ import java.util.function.Consumer;
  * CAS-based task implementation with lock-free state transitions.
  * <p>
  * State machine: PENDING → RUNNING → FINISHED (or CANCELLED at any point).
- * Period tasks reset to PENDING after each execution via {@link #clear()}.
+ * Period tasks reset to PENDING after each execution via {@link #clear()},
+ * unless the task was cancelled or terminated by an unhandled exception.
+ * <p>
+ * <b>Periodic task termination (JDK {@code ScheduledExecutorService} contract):</b>
+ * A periodic task runs indefinitely until one of the following occurs:
+ * <ul>
+ *   <li>The task is explicitly cancelled via {@link #cancel(boolean)}.</li>
+ *   <li>The scheduler terminates, resulting in task cancellation.</li>
+ *   <li>An execution throws an exception. In this case, subsequent executions
+ *       are suppressed and {@link #isDone()} returns {@code true}.</li>
+ * </ul>
+ * If an exception handler (Consumer or Function) is configured and successfully
+ * suppresses the exception, the periodic task continues — this is an opt-in
+ * extension beyond the JDK contract.
  * <p>
  * Tasks are ordered by their scheduled execution time via {@link Comparable}
  * and implement {@link Delayed} for use with {@link java.util.concurrent.DelayQueue}.
@@ -164,8 +177,17 @@ public class FocessTask implements TaskInternal, Delayed {
     public boolean cancel(boolean mayInterruptIfRunning) {
         while (true) {
             StateAndLatch current = stateRef.get();
-            if (current.state == TaskState.CANCELLED || current.state == TaskState.FINISHED)
+            if (current.state == TaskState.CANCELLED)
                 return false;
+            if (current.state == TaskState.FINISHED) {
+                // For periodic tasks, FINISHED is a mid-cycle state between
+                // runs — the task should still be cancellable (JDK contract:
+                // period tasks are only truly done when cancelled or
+                // exception-terminated). For one-shot tasks, FINISHED is
+                // terminal and cancel is a no-op.
+                if (this.period == null) return false;
+                // Periodic task: transition FINISHED → CANCELLED
+            }
             if (current.state == TaskState.RUNNING && !mayInterruptIfRunning)
                 return false;
             StateAndLatch next = new StateAndLatch(TaskState.CANCELLED, current.latch);
@@ -205,7 +227,17 @@ public class FocessTask implements TaskInternal, Delayed {
     @Override
     public boolean isDone() {
         TaskState s = stateRef.get().state;
-        return s == TaskState.FINISHED || s == TaskState.CANCELLED;
+        if (s == TaskState.CANCELLED) return true;
+        // For one-shot tasks, FINISHED is terminal.
+        // For periodic tasks, FINISHED is terminal only when the task
+        // has an unhandled exception (JDK contract: exception terminates
+        // period tasks). Otherwise FINISHED is a mid-cycle state and
+        // the task is not truly done — it will be re-dispatched.
+        if (s == TaskState.FINISHED) {
+            if (this.period == null) return true; // one-shot: FINISHED = done
+            return this.exception != null;         // period: done only if exception-terminated
+        }
+        return false;
     }
 
     @Override

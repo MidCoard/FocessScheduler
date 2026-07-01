@@ -17,9 +17,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class InlineExecutor implements TaskExecutor {
 
-    private volatile Thread runningThread;
-    private volatile FocessTask currentTask;
+    private Thread runningThread;
+    private FocessTask currentTask;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
+    /** Lock object for atomic check-and-interrupt in {@link #interruptTask}. */
+    private final Object taskLock = new Object();
 
     @Override
     public void setScheduler(@NonNull AbstractScheduler scheduler) {
@@ -29,49 +31,46 @@ public class InlineExecutor implements TaskExecutor {
 
     @Override
     public void execute(@NonNull FocessTask task, @NonNull Runnable completionCallback) {
-        runningThread = Thread.currentThread();
-        currentTask = task;
+        synchronized (taskLock) {
+            runningThread = Thread.currentThread();
+            currentTask = task;
+        }
         try {
-            task.run();
-        } catch (ExecutionException e) {
-            // If the cause is an Error (e.g. InternalError, OutOfMemoryError),
-            // re-throw it so the dispatcher thread's uncaught exception handler
-            // can shut down the scheduler. Errors indicate an unrecoverable state.
-            if (e.getCause() instanceof Error) {
+            try {
+                task.run();
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof Error) {
+                    task.setException(e);
+                    task.endRun();
+                    throw (Error) e.getCause();
+                }
                 task.setException(e);
+            } catch (Error e) {
+                task.setException(new ExecutionException(e));
                 task.endRun();
-                runningThread = null;
-                currentTask = null;
-                throw (Error) e.getCause();
+                throw e;
             }
-            task.setException(e);
-        } catch (Error e) {
-            // Error thrown directly (not wrapped in ExecutionException) —
-            // mark the task as failed and re-throw to trigger shutdown.
-            task.setException(new ExecutionException(e));
             task.endRun();
-            runningThread = null;
-            currentTask = null;
-            throw e;
         } finally {
-            Thread.interrupted(); // clear leaked interrupt from cancel(true)
-            // Only clear if we haven't already (in the Error paths above)
-            if (currentTask != null) {
+            // Clear the interrupt flag and release the task assignment atomically.
+            // This must be inside the lock so that interruptTask() cannot call
+            // t.interrupt() between endRun() and the field clear — which would
+            // leak a spurious interrupt into the next task on this thread.
+            synchronized (taskLock) {
+                Thread.interrupted();
                 runningThread = null;
                 currentTask = null;
             }
         }
-        task.endRun();
-        if (!task.isCancelled()) {
-            completionCallback.run();
-        }
+        completionCallback.run();
     }
 
     @Override
     public void interruptTask(@NonNull FocessTask task) {
-        Thread t = runningThread;
-        if (currentTask == task && t != null) {
-            t.interrupt();
+        synchronized (taskLock) {
+            if (currentTask == task && runningThread != null) {
+                runningThread.interrupt();
+            }
         }
     }
 
@@ -88,6 +87,8 @@ public class InlineExecutor implements TaskExecutor {
 
     @Override
     public boolean isIdle() {
-        return currentTask == null;
+        synchronized (taskLock) {
+            return currentTask == null;
+        }
     }
 }

@@ -154,18 +154,78 @@ class FocessTaskTest {
         scheduler.shutdown();
     }
 
-    // ---- 10. cancel() on FINISHED task returns false ----
+    // ---- 10. cancel() on FINISHED non-period task returns false ----
 
     @Test
-    @DisplayName("cancel() on a finished task returns false and does not mark it cancelled")
-    void cancelFinishedTaskReturnsFalse() throws Exception {
+    @DisplayName("cancel() on a finished non-period task returns false and does not mark it cancelled")
+    void cancelFinishedNonPeriodTaskReturnsFalse() throws Exception {
         FocessScheduler scheduler = new FocessScheduler("cancel-finished");
         Task task = scheduler.schedule(() -> {});
         task.join();
         assertTrue(task.isDone(), "task should be done");
-        assertFalse(task.cancel(), "cancel on finished task should return false");
-        assertFalse(task.cancel(true), "cancel(true) on finished task should return false");
+        assertFalse(task.cancel(), "cancel on finished non-period task should return false");
+        assertFalse(task.cancel(true), "cancel(true) on finished non-period task should return false");
         assertFalse(task.isCancelled(), "task should not be cancelled");
+        scheduler.shutdown();
+    }
+
+    // ---- 10b. cancel() on FINISHED period task succeeds (JDK contract) ----
+
+    @Test
+    @DisplayName("cancel() on a finished period task succeeds — period tasks are cancellable between cycles")
+    void cancelFinishedPeriodTaskSucceeds() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("cancel-period-finished");
+        Task task = scheduler.scheduleAtFixedRate(() -> {}, Duration.ZERO, Duration.ofMillis(100), "period");
+        Thread.sleep(300); // let a cycle complete
+        // The task may be in FINISHED state between cycles — cancel should work
+        assertTrue(task.cancel(), "cancel on period task should succeed even when between cycles");
+        assertTrue(task.isCancelled(), "period task should be cancelled");
+        assertTrue(task.isDone(), "cancelled period task should be done");
+        scheduler.shutdown();
+    }
+
+    // ---- 10c. Period task exception terminates the task (JDK contract) ----
+
+    @Test
+    @DisplayName("unhandled exception terminates a periodic task — JDK ScheduledExecutorService contract")
+    void unhandledExceptionTerminatesPeriodicTask() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("period-exception");
+        AtomicInteger count = new AtomicInteger(0);
+        Task task = scheduler.scheduleAtFixedRate(() -> {
+            count.incrementAndGet();
+            throw new RuntimeException("periodic-fail");
+        }, Duration.ZERO, Duration.ofMillis(100), "period-fail");
+
+        // Wait for the first cycle to complete (with exception) and verify termination
+        Thread.sleep(500);
+        assertTrue(task.isDone(), "period task with unhandled exception should be done");
+        assertFalse(task.isCancelled(), "task should not be cancelled — it terminated by exception");
+        assertEquals(1, count.get(), "should have run exactly once before exception terminated it");
+        // join() should throw the ExecutionException
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> task.join());
+        assertEquals("periodic-fail", ex.getCause().getMessage());
+        scheduler.shutdown();
+    }
+
+    // ---- 10d. Period task with handler continues after handled exception ----
+
+    @Test
+    @DisplayName("period task with Consumer handler continues after handled exception")
+    void periodTaskWithHandlerContinuesAfterException() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("period-handler-continue");
+        AtomicInteger count = new AtomicInteger(0);
+        AtomicInteger handlerCalls = new AtomicInteger(0);
+        Task task = scheduler.scheduleAtFixedRate(() -> {
+            count.incrementAndGet();
+            throw new RuntimeException("periodic-fail");
+        }, Duration.ZERO, Duration.ofMillis(200), "period-handled", ex -> handlerCalls.incrementAndGet());
+
+        Thread.sleep(700);
+        assertTrue(count.get() >= 2, "should have run at least 2 times with handler, got " + count.get());
+        assertTrue(handlerCalls.get() >= 2, "handler should have been called at least 2 times, got " + handlerCalls.get());
+        assertFalse(task.isDone(), "period task with handler should NOT be done — handler keeps it alive");
+        task.cancel();
+        assertTrue(task.isDone(), "after cancel, task should be done");
         scheduler.shutdown();
     }
 
