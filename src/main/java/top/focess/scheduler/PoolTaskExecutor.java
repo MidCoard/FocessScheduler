@@ -108,12 +108,13 @@ public class PoolTaskExecutor implements TaskExecutor {
         if (shutdown.getAndSet(true))
             return;
         if (now) {
-            // Interrupt all workers
+            // Interrupt all workers so they break out of poll immediately
             for (Worker w : taskWorkerMap.values()) {
                 w.interrupt();
             }
         }
-        // Non-now: workers will drain naturally and exit
+        // For graceful shutdown (now=false): workers drain the workQueue
+        // and exit when they see shutdown=true + workQueue.isEmpty().
     }
 
     @Override
@@ -209,7 +210,7 @@ public class PoolTaskExecutor implements TaskExecutor {
 
         @Override
         public void run() {
-            while (!shutdown.get()) {
+            while (true) {
                 try {
                     WorkItem item;
                     if (workerCount.get() > corePoolSize) {
@@ -236,7 +237,16 @@ public class PoolTaskExecutor implements TaskExecutor {
                         // shutdown(false) is called with an empty queue, leaking
                         // the thread.
                         item = workQueue.poll(1, TimeUnit.SECONDS);
-                        if (item == null) continue;
+                        if (item == null) {
+                            // After shutdown, core workers exit only after the dispatcher
+                            // is truly dead — it may still be mid-dispatch.
+                            if (shutdown.get() && workQueue.isEmpty()) {
+                                AbstractScheduler s = scheduler;
+                                if (s != null && !s.getDispatcher().isTerminated()) continue;
+                                return;
+                            }
+                            continue;
+                        }
                     }
 
                     FocessTask task = item.task;
@@ -272,8 +282,21 @@ public class PoolTaskExecutor implements TaskExecutor {
                         runningCount.decrementAndGet();
                     }
                     item.completionCallback.run();
+                    // After processing a task, check if we should exit:
+                    // shutdown was called and the queue is empty.
+                    if (shutdown.get() && workQueue.isEmpty()) {
+                        AbstractScheduler s = scheduler;
+                        if (s != null && !s.getDispatcher().isTerminated()) continue;
+                        return;
+                    }
                 } catch (InterruptedException e) {
-                    // shutdown or cancel — check flag
+                    // shutdownNow() — if shutdown is set, queue is empty, and
+                    // dispatcher is dead, exit
+                    if (shutdown.get() && workQueue.isEmpty()) {
+                        AbstractScheduler s = scheduler;
+                        if (s != null && !s.getDispatcher().isTerminated()) continue;
+                        return;
+                    }
                 }
             }
         }
