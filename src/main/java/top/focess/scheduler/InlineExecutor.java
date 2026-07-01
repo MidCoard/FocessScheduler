@@ -45,10 +45,6 @@ public class InlineExecutor implements TaskExecutor {
                     throw (Error) e.getCause();
                 }
                 task.setException(e);
-            } catch (Error e) {
-                task.setException(new ExecutionException(e));
-                task.endRun();
-                throw e;
             }
             task.endRun();
         } finally {

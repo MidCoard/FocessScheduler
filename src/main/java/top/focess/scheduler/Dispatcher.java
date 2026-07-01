@@ -24,7 +24,7 @@ public interface Dispatcher {
      * Submit a task for dispatching.
      *
      * @param task the task to dispatch
-     * @throws top.focess.scheduler.exceptions.SchedulerClosedException if the dispatcher has been shut down
+     * @throws java.util.concurrent.RejectedExecutionException if the dispatcher has been shut down
      */
     void dispatch(@NonNull FocessTask task);
 
@@ -36,7 +36,7 @@ public interface Dispatcher {
     /**
      * Shutdown the dispatcher.
      *
-     * @param now if true, stop immediately; if false, cancel pending tasks and stop gracefully
+     * @param now if true, halt immediately (cancel pending tasks); if false, let pending tasks drain gracefully
      */
     void shutdown(boolean now);
 

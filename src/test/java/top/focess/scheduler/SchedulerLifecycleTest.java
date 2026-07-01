@@ -2,7 +2,7 @@ package top.focess.scheduler;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
+import java.util.concurrent.RejectedExecutionException;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -119,17 +119,17 @@ class SchedulerLifecycleTest {
     // ---- 7. Scheduling after shutdown throws on both schedulers ----
 
     @Test
-    @DisplayName("scheduling after shutdown throws SchedulerClosedException on both Focess and ThreadPool")
+    @DisplayName("scheduling after shutdown throws RejectedExecutionException on both Focess and ThreadPool")
     void scheduleAfterShutdownThrows() {
         FocessScheduler fs = new FocessScheduler("closed-f");
         fs.shutdown();
-        assertThrows(SchedulerClosedException.class, () -> fs.schedule(() -> {}),
-            "FocessScheduler should throw SchedulerClosedException");
+        assertThrows(RejectedExecutionException.class, () -> fs.schedule(() -> {}),
+            "FocessScheduler should throw RejectedExecutionException");
 
         ThreadPoolScheduler ts = new ThreadPoolScheduler(2, false, "closed-t");
         ts.shutdown();
-        assertThrows(SchedulerClosedException.class, () -> ts.schedule(() -> {}),
-            "ThreadPoolScheduler should throw SchedulerClosedException");
+        assertThrows(RejectedExecutionException.class, () -> ts.schedule(() -> {}),
+            "ThreadPoolScheduler should throw RejectedExecutionException");
     }
 
     // ---- 8. ExecutorService submit(Callable) ----

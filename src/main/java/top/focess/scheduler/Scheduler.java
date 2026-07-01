@@ -2,7 +2,6 @@ package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.time.Duration;
 import java.util.List;

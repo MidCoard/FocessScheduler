@@ -3,7 +3,7 @@ package top.focess.scheduler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
+import java.util.concurrent.RejectedExecutionException;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -179,19 +179,25 @@ class ThreadPoolSchedulerTest {
         scheduler.shutdown();
     }
 
-    // ---- 8. Uncaught Error shuts down scheduler ----
+    // ---- 8. Uncaught Error does not shut down scheduler — worker is relaunched ----
 
     @Test
-    @DisplayName("an uncaught Error in a worker task shuts down the scheduler")
-    void uncaughtErrorShutsDownScheduler() throws Exception {
+    @DisplayName("an uncaught Error in a worker task does not shut down the scheduler; worker is relaunched")
+    void uncaughtErrorDoesNotShutDownScheduler() throws Exception {
         ThreadPoolScheduler scheduler = new ThreadPoolScheduler(2, false, "tp-error");
         scheduler.schedule(() -> {
             try { Thread.sleep(300); } catch (InterruptedException e) {}
             throw new InternalError("fatal");
         });
         Thread.sleep(1500);
-        assertTrue(scheduler.isShutdown(), "scheduler should be shut down after InternalError");
-        assertThrows(SchedulerClosedException.class, () -> scheduler.schedule(() -> {}));
+        // The scheduler should NOT be shut down — the worker is relaunched instead
+        assertFalse(scheduler.isShutdown(), "scheduler should NOT be shut down after InternalError — worker is relaunched");
+        // Verify the pool still works by submitting another task
+        AtomicBoolean ran = new AtomicBoolean(false);
+        Task task = scheduler.schedule(() -> ran.set(true));
+        task.join(5, TimeUnit.SECONDS);
+        assertTrue(ran.get(), "pool should still process tasks after Error");
+        scheduler.shutdown();
     }
 
     // ---- 9. Immediate mode — dynamic expansion ----

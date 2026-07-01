@@ -1,10 +1,11 @@
 package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.DelayQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -20,6 +21,8 @@ public class TimeDispatcher implements Dispatcher {
     private volatile AbstractScheduler scheduler;
     private final Thread thread;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
+    /** Whether to halt pending tasks (shutdownNow) vs let them drain (shutdown). */
+    private volatile boolean haltPending = false;
 
     public TimeDispatcher(String name, boolean isDaemon) {
         this.thread = new Thread(this::runLoop, name + "-dispatcher");
@@ -47,7 +50,7 @@ public class TimeDispatcher implements Dispatcher {
     }
 
     private void runLoop() {
-        while (!shutdown.get()) {
+        while (!shutdown.get() || (!haltPending && !queue.isEmpty())) {
             try {
                 // Use poll with a timeout instead of take() so the dispatcher
                 // thread periodically checks the shutdown flag without needing
@@ -55,8 +58,8 @@ public class TimeDispatcher implements Dispatcher {
                 // any inline task currently executing on the dispatcher thread
                 // (FocessScheduler's InlineExecutor).
                 FocessTask task = queue.poll(1, java.util.concurrent.TimeUnit.SECONDS);
-                if (task == null) continue; // timeout — re-check shutdown flag
-                if (shutdown.get()) {
+                if (task == null) continue; // timeout — re-check flags
+                if (haltPending) {
                     task.cancel(false);
                     continue;
                 }
@@ -66,14 +69,14 @@ public class TimeDispatcher implements Dispatcher {
                     s.onTaskReady(task);
                 }
             } catch (InterruptedException e) {
-                // shutdownNow() or cancel signal — loop will check shutdown flag
+                // shutdownNow() or cancel signal — loop will check flags
             }
         }
     }
 
     @Override
     public void dispatch(@NonNull FocessTask task) {
-        if (shutdown.get()) throw new SchedulerClosedException(scheduler);
+        if (shutdown.get()) throw new RejectedExecutionException("Scheduler " + (scheduler != null ? scheduler.getName() : "unknown") + " is closed");
         queue.add(task);
     }
 
@@ -84,7 +87,7 @@ public class TimeDispatcher implements Dispatcher {
      */
     @Override
     public void cancelPending() {
-        ArrayList<FocessTask> tasks = new ArrayList<>();
+        List<FocessTask> tasks = new ArrayList<>();
         queue.drainTo(tasks);
         for (FocessTask task : tasks) {
             task.cancel(false);
@@ -95,22 +98,25 @@ public class TimeDispatcher implements Dispatcher {
     public void shutdown(boolean now) {
         if (shutdown.getAndSet(true))
             return;
+        haltPending = now;
         if (now) {
-            // Immediate shutdown: interrupt the thread to break out of any
-            // blocking wait (including an inline task on the dispatcher thread).
+            // Immediate shutdown: cancel pending tasks, interrupt the thread
+            // to break out of any blocking wait (including an inline task
+            // on the dispatcher thread).
             thread.interrupt();
         }
-        // Graceful shutdown (now=false): the dispatcher thread will notice the
-        // shutdown flag on its next poll timeout (within 1 second) — no need
-        // to interrupt, which could disturb an inline task.
+        // Graceful shutdown (now=false): keep dispatching pending tasks
+        // until the queue is empty, then the thread exits naturally.
     }
 
     /**
      * Drain and cancel all pending tasks (including non-expired) from the queue.
      * Returns the list of tasks that were pending.
      */
-    List<FocessTask> drainPending() {
-        ArrayList<FocessTask> tasks = new ArrayList<>();
+    @Override
+    @NonNull
+    public List<FocessTask> drainPending() {
+        List<FocessTask> tasks = new ArrayList<>();
         queue.drainTo(tasks);
         for (FocessTask task : tasks) {
             task.cancel(false);
@@ -121,7 +127,8 @@ public class TimeDispatcher implements Dispatcher {
     /**
      * Whether the dispatcher thread has fully exited.
      */
-    boolean isTerminated() {
+    @Override
+    public boolean isTerminated() {
         return !thread.isAlive();
     }
 

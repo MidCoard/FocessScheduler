@@ -17,8 +17,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * up to an optional {@code maxPoolSize} cap.
  * <p>
  * Each worker is a daemon thread. When a task throws an uncaught {@link Error},
- * the worker's uncaught exception handler shuts down the entire scheduler
- * (by design — an uncaught error typically indicates an unrecoverable state).
+ * the worker dies but the pool relaunches a replacement worker so the pool
+ * maintains its core size. The error is reported to the scheduler's
+ * {@link Thread.UncaughtExceptionHandler} for logging/monitoring.
  */
 public class PoolTaskExecutor implements TaskExecutor {
 
@@ -150,6 +151,19 @@ public class PoolTaskExecutor implements TaskExecutor {
         worker.start();
     }
 
+    /**
+     * Relaunch a replacement worker after one dies (e.g. from an uncaught Error).
+     * The dead worker already decremented workerCount via its exit path, so
+     * we just need to start a new one.
+     */
+    private void relaunchWorker() {
+        if (shutdown.get()) return;
+        int idx = workerCount.getAndIncrement();
+        Worker worker = new Worker(name + "-worker-" + idx);
+        worker.setDaemon(true);
+        worker.start();
+    }
+
     class Worker extends Thread {
 
         /** The task currently being executed by this worker, or null. */
@@ -161,11 +175,7 @@ public class PoolTaskExecutor implements TaskExecutor {
             super(name);
             setUncaughtExceptionHandler((t, e) -> {
                 try {
-                    // Use the volatile field for O(1) lookup instead of scanning taskWorkerMap.
-                    // If the Error was caught by the Worker's catch(ExecutionException) block,
-                    // currentTaskField will already be null (the inline Error path cleaned up
-                    // the task, taskWorkerMap, and runningCount before re-throwing).
-                    // Only clean up here if the Error bypassed that path (e.g. raw Error).
+                    // Clean up the task that was running when the Error occurred.
                     FocessTask current;
                     synchronized (taskLock) {
                         current = currentTaskField;
@@ -181,13 +191,16 @@ public class PoolTaskExecutor implements TaskExecutor {
                         }
                         runningCount.decrementAndGet();
                     }
-                    // BY DESIGN: a single failing task shuts down the entire scheduler
+                    // This worker thread is dead — decrement workerCount so
+                    // relaunchWorker() can increment it back for the replacement.
+                    workerCount.decrementAndGet();
+                    // Report the error to the scheduler's handler for logging/monitoring
                     AbstractScheduler s = scheduler;
-                    if (s != null) {
-                        s.shutdown();
-                        if (s.getUncaughtExceptionHandler() != null)
-                            s.getUncaughtExceptionHandler().uncaughtException(t, e);
+                    if (s != null && s.getUncaughtExceptionHandler() != null) {
+                        s.getUncaughtExceptionHandler().uncaughtException(t, e);
                     }
+                    // Relaunch a replacement worker to maintain pool size
+                    relaunchWorker();
                 } catch (Throwable ex) {
                     ex.printStackTrace(System.err);
                 }
@@ -198,28 +211,32 @@ public class PoolTaskExecutor implements TaskExecutor {
         public void run() {
             while (!shutdown.get()) {
                 try {
-                    Thread.interrupted(); // clear any leftover interrupt
-                    WorkItem item = workQueue.poll();
-                    if (item == null) {
-                        // Wait briefly for work
-                        item = workQueue.poll(100, TimeUnit.MILLISECONDS);
+                    WorkItem item;
+                    if (workerCount.get() > corePoolSize) {
+                        // Extra worker: use timed poll so we can exit if idle
+                        item = workQueue.poll(5, TimeUnit.SECONDS);
                         if (item == null) {
-                            // If we're an extra worker (beyond core), consider terminating.
-                            // Use CAS loop to prevent multiple workers from decrementing
-                            // workerCount below corePoolSize simultaneously.
+                            // Idle timeout — try to exit this extra worker
                             while (true) {
                                 int current = workerCount.get();
                                 if (current > corePoolSize) {
                                     if (workerCount.compareAndSet(current, current - 1)) {
-                                        return; // exit this extra worker
+                                        return; // exit
                                     }
                                     // CAS failed — re-check
                                 } else {
-                                    break; // core worker — don't exit
+                                    break; // no longer extra — stay as core
                                 }
                             }
                             continue;
                         }
+                    } else {
+                        // Core worker: use timed poll (not take) so we periodically
+                        // check the shutdown flag. take() would block forever if
+                        // shutdown(false) is called with an empty queue, leaking
+                        // the thread.
+                        item = workQueue.poll(1, TimeUnit.SECONDS);
+                        if (item == null) continue;
                     }
 
                     FocessTask task = item.task;
@@ -254,11 +271,7 @@ public class PoolTaskExecutor implements TaskExecutor {
                         }
                         runningCount.decrementAndGet();
                     }
-                    // Skip completion callback for cancelled tasks — the scheduler
-                    // should not re-dispatch or report completion for a cancelled task.
-                    if (!task.isCancelled()) {
-                        item.completionCallback.run();
-                    }
+                    item.completionCallback.run();
                 } catch (InterruptedException e) {
                     // shutdown or cancel — check flag
                 }

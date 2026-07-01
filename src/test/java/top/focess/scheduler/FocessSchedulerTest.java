@@ -3,7 +3,7 @@ package top.focess.scheduler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
+import java.util.concurrent.RejectedExecutionException;
 
 import java.time.Duration;
 import java.util.concurrent.CancellationException;
@@ -229,14 +229,14 @@ class FocessSchedulerTest {
         scheduler.shutdown();
     }
 
-    // ---- 14. SchedulerClosedException after shutdown ----
+    // ---- 14. RejectedExecutionException after shutdown ----
 
     @Test
-    @DisplayName("scheduling on a shut-down FocessScheduler throws SchedulerClosedException")
+    @DisplayName("scheduling on a shut-down FocessScheduler throws RejectedExecutionException")
     void shutdownPreventsNewTasks() {
         FocessScheduler scheduler = new FocessScheduler("closed");
         scheduler.shutdown();
-        assertThrows(SchedulerClosedException.class, () -> scheduler.schedule(() -> {}));
+        assertThrows(RejectedExecutionException.class, () -> scheduler.schedule(() -> {}));
     }
 
     // ---- 15. Daemon thread mode ----

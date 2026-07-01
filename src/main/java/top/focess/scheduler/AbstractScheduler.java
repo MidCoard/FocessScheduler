@@ -2,10 +2,10 @@ package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import top.focess.scheduler.exceptions.SchedulerClosedException;
+import java.util.concurrent.RejectedExecutionException;
 
 import java.time.Duration;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -49,7 +49,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task schedule(@NonNull Runnable runnable, @NonNull Duration delay) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, this);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -59,7 +59,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task schedule(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull String name) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, this, name);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -69,7 +69,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task schedule(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull String name, @Nullable Consumer<ExecutionException> handler) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, this, name, handler);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -79,7 +79,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -89,7 +89,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this, name);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -99,7 +99,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name, @Nullable Consumer<ExecutionException> handler) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this, name, handler);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(task);
@@ -109,7 +109,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public <V> Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessCallback<V> callback = new FocessCallback<>(callable, this);
         callback.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(callback);
@@ -119,7 +119,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public <V> Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay, @NonNull String name) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessCallback<V> callback = new FocessCallback<>(callable, this, name);
         callback.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(callback);
@@ -129,7 +129,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public <V> Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay, @NonNull String name, @Nullable Function<ExecutionException, V> handler) {
-        if (dispatcher.isShutdown()) throw new SchedulerClosedException(this);
+        if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessCallback<V> callback = new FocessCallback<>(callable, this, name, handler);
         callback.setScheduledTime(System.nanoTime() + delay.toNanos());
         dispatcher.dispatch(callback);
@@ -186,7 +186,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
             task.setScheduledTime(System.nanoTime() + task.getPeriod().toNanos());
             try {
                 dispatcher.dispatch(task);
-            } catch (SchedulerClosedException e) {
+            } catch (RejectedExecutionException e) {
                 // Scheduler was shut down between the isShutdown check and dispatch —
                 // cancel the periodic task gracefully instead of letting the exception
                 // propagate and kill the worker or dispatcher thread.
@@ -216,7 +216,14 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
         // Drain pending tasks from the dispatcher and return them as the
         // ExecutorService contract requires. Tasks that were already in-flight
         // on the executor are not included — they have been interrupted.
-        return new ArrayList<>(dispatcher.drainPending());
+        List<FocessTask> pending = dispatcher.drainPending();
+        List<Runnable> result = new ArrayList<>(pending.size());
+        for (FocessTask task : pending) {
+            result.add(() -> {
+                try { task.run(); } catch (ExecutionException ignored) {}
+            });
+        }
+        return result;
     }
 
     @Override

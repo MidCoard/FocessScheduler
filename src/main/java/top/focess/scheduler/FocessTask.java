@@ -66,8 +66,7 @@ public class FocessTask implements TaskInternal, Delayed {
          * Because both must transition together (e.g. FINISHED→countDown, CANCELLED→countDown,
          * clear()→new latch + PENDING), a single CAS on this object makes the update atomic.
          */
-        record StateAndLatch(TaskState state, CountDownLatch latch) {
-    }
+        record StateAndLatch(TaskState state, CountDownLatch latch) {}
 
     private final Runnable runnable;
     private final Scheduler scheduler;
