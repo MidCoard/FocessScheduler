@@ -1,38 +1,47 @@
 package top.focess.scheduler;
 
-import org.jetbrains.annotations.Nullable;
-
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
 
-public class FocessScheduler extends AScheduler {
-    private final SchedulerThread thread;
+/**
+ * Single-threaded scheduler: dispatching and execution happen on the same thread.
+ * <p>
+ * Uses {@link TimeDispatcher} + {@link InlineExecutor} internally.
+ * The dispatcher thread blocks on the {@link java.util.concurrent.DelayQueue}
+ * until a task's scheduled time arrives, then runs the task inline on that same thread.
+ * <p>
+ * If a task runs longer than expected, subsequent tasks are delayed accordingly.
+ * A running task can be cooperatively cancelled via {@link Task#cancel(boolean) cancel(true)},
+ * which interrupts the dispatcher thread.
+ */
+public class FocessScheduler extends AbstractScheduler {
+
+    /**
+     * Composable constructor — any Dispatcher with any TaskExecutor.
+     *
+     * @param dispatcher the dispatcher to use
+     * @param executor   the executor to use
+     */
+    public FocessScheduler(Dispatcher dispatcher, TaskExecutor executor) {
+        super(dispatcher, executor, deriveName(dispatcher));
+    }
 
     /**
      * Creates a new {@code FocessScheduler} with a non-daemon scheduler thread.
      *
      * @param name the scheduler name
      */
-    public FocessScheduler(final String name) {
+    public FocessScheduler(String name) {
         this(name, false);
     }
 
     /**
      * Creates a new {@code FocessScheduler}.
-     * <p>
-     * This is a single-threaded scheduler: all tasks are executed sequentially in time order.
-     * If a task runs longer than expected, subsequent tasks are delayed accordingly.
-     * A running task can be cooperatively cancelled via {@link Task#cancel(boolean) cancel(true)},
-     * which interrupts the scheduler thread.
      *
      * @param name     the scheduler name
      * @param isDaemon {@code true} to create a daemon scheduler thread
      */
-    public FocessScheduler(final String name, boolean isDaemon) {
-        super(name);
-        this.thread = new SchedulerThread(this.getName());
-        this.thread.setDaemon(isDaemon);
-        this.thread.start();
+    public FocessScheduler(String name, boolean isDaemon) {
+        super(new TimeDispatcher(name, isDaemon), new InlineExecutor(), name);
     }
 
     /**
@@ -41,144 +50,11 @@ public class FocessScheduler extends AScheduler {
      * @param prefix the prefix for the generated scheduler name
      * @return a new non-daemon {@code FocessScheduler}
      */
-    public static FocessScheduler newPrefixFocessScheduler(final String prefix) {
+    public static FocessScheduler newPrefixScheduler(String prefix) {
         return new FocessScheduler(prefix + "-FocessScheduler-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
-    /**
-     * Graceful shutdown — by design does NOT interrupt the currently running task.
-     * <p>
-     * {@code shutdown()} marks the scheduler for stop ({@code shouldStop = true}), cancels
-     * every queued task, and notifies the run loop. The scheduler thread, if it is
-     * currently executing a task (i.e. inside {@link FocessTask#run()}), will finish that
-     * task naturally before observing {@code shouldStop} and exiting.
-     * <p>
-     * Callers that need to force-stop a stuck task must use {@link #shutdownNow()}, which
-     * additionally interrupts the scheduler thread. Note that task cancellation is
-     * <em>cooperative</em>: tasks that ignore {@link InterruptedException} will continue
-     * to completion regardless.
-     */
-    @Override
-    public synchronized void shutdown() {
-        if (this.shouldStop)
-            return;
-        super.shutdown();
-        this.shouldStop = true;
-        this.cancelAll();
-        this.notify();
-    }
-
-    /**
-     * Forceful shutdown — interrupts the scheduler thread so any running task or
-     * {@code wait()} wakes up and observes {@code shouldStop}.
-     * <p>
-     * See {@link #shutdown()} for the graceful variant. {@code shutdownNow()} does
-     * <em>not</em> forcibly stop a task; it only interrupts, and the task must
-     * cooperate by handling {@link InterruptedException}.
-     */
-    @Override
-    public synchronized void shutdownNow() {
-        if (this.shouldStop)
-            return;
-        this.shutdown();
-        // interrupt the scheduler thread so that a blocking task (or wait) wakes up and
-        // the run loop can observe shouldStop and terminate cooperatively
-        this.thread.interrupt();
-    }
-
-    @Override
-    protected synchronized void interruptTaskIfRunning(final FocessTask task) {
-        if (this.thread.task == task)
-            this.thread.interrupt();
-    }
-
-    private class SchedulerThread extends Thread {
-
-        @Nullable
-        private FocessTask task;
-
-        public SchedulerThread(final String name) {
-            super(name);
-            this.setUncaughtExceptionHandler((t, e) -> {
-                FocessScheduler.this.shutdown();
-                if (this.task != null) {
-                    this.task.setException(new ExecutionException(e));
-                    this.task.endRun();
-                }
-                this.task = null;
-                if (FocessScheduler.this.getUncaughtExceptionHandler() != null)
-                    FocessScheduler.this.getUncaughtExceptionHandler().uncaughtException(t, e);
-            });
-        }
-
-        @Override
-        public void run() {
-            while (true) {
-                try {
-                    // Clear any leftover interrupt from a cancelled task so it does not spin the
-                    // next wait(). Shutdown does not rely on this flag (it uses shouldStop + notify),
-                    // so clearing here cannot swallow a shutdown signal.
-                    Thread.interrupted();
-                    synchronized (FocessScheduler.this) {
-                        if (FocessScheduler.this.shouldStop)
-                            break;
-                        if (FocessScheduler.this.tasks.isEmpty())
-                            FocessScheduler.this.wait();
-                        this.task = FocessScheduler.this.tasks.poll();
-                        // if task is null, the scheduler may be stopped, continue to loopback and check shouldStop
-                        if (this.task != null && !this.task.isCancelled()) {
-                            final long now = System.currentTimeMillis();
-                            FocessScheduler.this.wait0(this.task.getTime() - now);
-                            if (this.task.getTime() > System.currentTimeMillis()) {
-                                FocessScheduler.this.tasks.add(this.task);
-                                continue;
-                            }
-                            final FocessTask task = FocessScheduler.this.tasks.peek();
-                            // in fact, here is no need to compare the time of the next task, but we need to make sure the order
-                            // of the tasks execution meets the user time order
-                            if (task != null && task.getTime() < this.task.getTime()) {
-                                FocessScheduler.this.tasks.add(this.task);
-                                continue;
-                            }
-                        } else continue;
-                    }
-                    synchronized (this.task) {
-                        if (this.task.isCancelled())
-                            continue;
-                        this.task.startRun();
-                    }
-                    try {
-                        this.task.run();
-                    } catch (final ExecutionException e) {
-                        this.task.setException(e);
-                    } finally {
-                        // consume any interrupt raised by cancel(true) so it does not leak into
-                        // the scheduler thread's next wait() and spin the run loop
-                        Thread.interrupted();
-                    }
-                    this.task.endRun();
-                    if (this.task.isPeriod() && !this.task.isCancelled()) {
-                        this.task.clear();
-                        synchronized (FocessScheduler.this) {
-                            // atomically check shouldStop and re-add under the scheduler lock
-                            if (FocessScheduler.this.shouldStop) {
-                                // period task cannot re-arm itself during shutdown — mark cancelled so observers see a terminal state
-                                this.task.cancel(false);
-                            } else {
-                                this.task.setTime(System.currentTimeMillis() + this.task.getPeriod().toMillis());
-                                FocessScheduler.this.tasks.add(this.task);
-                            }
-                        }
-                    }
-                    synchronized (FocessScheduler.this) {
-                        this.task = null;
-                    }
-                } catch (final Exception e) {
-                    // this is an internal error
-                    e.printStackTrace(System.err);
-                    shutdown();
-                }
-            }
-        }
+    private static String deriveName(Dispatcher dispatcher) {
+        return dispatcher.toString();
     }
 }

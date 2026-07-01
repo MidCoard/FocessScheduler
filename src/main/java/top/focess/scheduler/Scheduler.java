@@ -1,7 +1,7 @@
 package top.focess.scheduler;
 
-
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import top.focess.scheduler.exceptions.SchedulerClosedException;
 
 import java.time.Duration;
@@ -16,149 +16,87 @@ import java.util.function.Function;
  * <p>
  * Two scheduler implementations are provided:
  * <ul>
- *   <li>{@link FocessScheduler} — single-threaded, executes tasks in time order</li>
- *   <li>{@link ThreadPoolScheduler} — multi-threaded, executes tasks in parallel</li>
+ *   <li>{@link FocessScheduler} — single-threaded, executes tasks sequentially in time order</li>
+ *   <li>{@link ThreadPoolScheduler} — multi-threaded, executes tasks in parallel across a worker pool</li>
  * </ul>
+ * <p>
+ * Both are composable: any {@link Dispatcher} works with any {@link TaskExecutor}
+ * through the Scheduler's wiring API.
+ * <p>
+ * For {@link java.util.concurrent.ExecutorService} compatibility, use the concrete
+ * implementations ({@link FocessScheduler}, {@link ThreadPoolScheduler}) which extend
+ * {@link java.util.concurrent.AbstractExecutorService}.
  */
 public interface Scheduler {
 
     /**
-     * Runs a task immediately.
-     *
-     * @param runnable the task to run
-     * @return a handle to the scheduled task
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a task for immediate execution.
      */
-    default Task run(final Runnable runnable) {
-        return this.run(runnable, Duration.ZERO);
+    default @NonNull Task schedule(@NonNull Runnable runnable) {
+        return this.schedule(runnable, Duration.ZERO);
     }
 
     /**
-     * Runs a task after the specified delay.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before execution
-     * @return a handle to the scheduled task
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a task after the specified delay.
      */
-    Task run(Runnable runnable, Duration delay);
-
+    @NonNull Task schedule(@NonNull Runnable runnable, @NonNull Duration delay);
 
     /**
-     * Runs a task immediately with the given name.
-     *
-     * @param runnable the task to run
-     * @param name     the name of the task
-     * @return a handle to the scheduled task
+     * Schedules a named task for immediate execution.
      */
-    default Task run(final Runnable runnable, final String name) {
-        return this.run(runnable, Duration.ZERO, name);
+    default @NonNull Task schedule(@NonNull Runnable runnable, @NonNull String name) {
+        return this.schedule(runnable, Duration.ZERO, name);
     }
 
     /**
-     * Runs a task after the specified delay with the given name.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before execution
-     * @param name     the name of the task
-     * @return a handle to the scheduled task
+     * Schedules a named task after the specified delay.
      */
-    Task run(Runnable runnable, Duration delay, String name);
+    @NonNull Task schedule(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull String name);
 
     /**
-     * Runs a task periodically after an initial delay.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before the first execution
-     * @param period   the period between successive executions
-     * @return a handle to the scheduled task
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a named task after the specified delay with an exception handler.
      */
-    Task runTimer(Runnable runnable, Duration delay, Duration period);
+    @NonNull Task schedule(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull String name, @Nullable Consumer<ExecutionException> handler);
 
     /**
-     * Runs a task periodically after an initial delay with the given name.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before the first execution
-     * @param period   the period between successive executions
-     * @param name     the name of the task
-     * @return a handle to the scheduled task
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a periodic task.
      */
-    Task runTimer(Runnable runnable, Duration delay, Duration period, String name);
+    @NonNull Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period);
 
     /**
-     * Runs a task periodically with the given name and exception handler.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before the first execution
-     * @param period   the period between successive executions
-     * @param name     the name of the task
-     * @param handler  the exception handler, called when the task throws an exception
-     * @return a handle to the scheduled task
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a named periodic task.
      */
-    Task runTimer(Runnable runnable, Duration delay, Duration period, String name, Consumer<ExecutionException> handler);
+    @NonNull Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name);
 
     /**
-     * Submits a callable task for immediate execution.
-     *
-     * @param callable the callable to execute
-     * @param <V>      the return type
-     * @return a handle to the scheduled callback
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Schedules a named periodic task with an exception handler.
      */
-    default <V> Callback<V> submit(final Callable<V> callable) {
-        return this.submit(callable, Duration.ZERO);
-    }
+    @NonNull Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name, @Nullable Consumer<ExecutionException> handler);
 
     /**
-     * Submits a callable task for execution after the specified delay.
-     *
-     * @param callable the callable to execute
-     * @param delay    the delay before execution
-     * @param <V>      the return type
-     * @return a handle to the scheduled callback
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Submits a callable after the specified delay.
      */
-    <V> Callback<V> submit(Callable<V> callable, Duration delay);
+    <V> @NonNull Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay);
 
     /**
-     * Submits a callable task for immediate execution with the given name.
-     *
-     * @param callable the callable to execute
-     * @param name     the name of the task
-     * @param <V>      the return type
-     * @return a handle to the scheduled callback
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Submits a named callable after the specified delay.
      */
-    default <V> Callback<V> submit(final Callable<V> callable, final String name) {
-        return this.submit(callable, Duration.ZERO, name);
-    }
+    <V> @NonNull Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay, @NonNull String name);
 
     /**
-     * Submits a callable task for execution after the specified delay with the given name.
-     *
-     * @param callable the callable to execute
-     * @param delay    the delay before execution
-     * @param <V>      the return type
-     * @param name     the name of the task
-     * @return a handle to the scheduled callback
-     * @throws SchedulerClosedException if the scheduler has been shut down
+     * Submits a named callable after the specified delay with an exception handler.
      */
-    <V> Callback<V> submit(Callable<V> callable, Duration delay, String name);
+    <V> @NonNull Callback<V> submit(@NonNull Callable<V> callable, @NonNull Duration delay, @NonNull String name, @Nullable Function<ExecutionException, V> handler);
 
     /**
      * Cancels all pending tasks in the queue.
      */
-    void cancelAll();
+    void cancelPending();
 
     /**
      * Returns the name of this scheduler.
-     *
-     * @return the scheduler name
      */
+    @NonNull
     String getName();
 
     /**
@@ -168,77 +106,42 @@ public interface Scheduler {
 
     /**
      * Returns whether this scheduler has been shut down.
-     *
-     * @return {@code true} if the scheduler has been shut down, {@code false} otherwise
      */
     boolean isShutdown();
 
     /**
      * Shuts this scheduler down immediately, attempting to stop running tasks via interruption.
+     *
+     * @return a list of tasks that were awaiting execution (always empty for this implementation)
      */
-    void shutdownNow();
+    @NonNull
+    List<Runnable> shutdownNow();
 
     /**
      * Sets the uncaught exception handler for scheduler threads.
-     *
-     * @param handler the exception handler
      */
     void setUncaughtExceptionHandler(Thread.UncaughtExceptionHandler handler);
 
     /**
-     * Returns the uncaught exception handler for scheduler threads.
-     *
-     * @return the exception handler, or {@code null} if none is set
+     * Returns the uncaught exception handler, or null.
      */
-    @Nullable Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
+    Thread.UncaughtExceptionHandler getUncaughtExceptionHandler();
 
     /**
-     * Runs a task immediately with the given name and exception handler.
-     *
-     * @param runnable the task to run
-     * @param name     the name of the task
-     * @param handler  the exception handler, called when the task throws an exception
-     * @return a handle to the scheduled task
+     * Returns the dispatcher used by this scheduler.
      */
-    default Task run(final Runnable runnable, final String name, final Consumer<ExecutionException> handler) {
-        return this.run(runnable, Duration.ZERO, name, handler);
-    }
+    @NonNull
+    Dispatcher getDispatcher();
 
     /**
-     * Runs a task after the specified delay with the given name and exception handler.
-     *
-     * @param runnable the task to run
-     * @param delay    the delay before execution
-     * @param name     the name of the task
-     * @param handler  the exception handler, called when the task throws an exception
-     * @return a handle to the scheduled task
+     * Returns the executor used by this scheduler.
      */
-    Task run(final Runnable runnable, final Duration delay, final String name, final Consumer<ExecutionException> handler);
+    @NonNull
+    TaskExecutor getTaskExecutor();
 
     /**
-     * Submits a callable task for immediate execution with the given name and exception handler.
-     *
-     * @param callable the callable to execute
-     * @param name     the name of the task
-     * @param handler  the exception handler; its return value is used as the result of {@link Callback#call()}
-     * @param <V>      the return type
-     * @return a handle to the scheduled callback
+     * Interrupt the thread currently running the given task, if any.
+     * Used internally for cooperative cancellation.
      */
-    default <V> Callback<V> submit(final Callable<V> callable, final String name, final Function<ExecutionException,V> handler) {
-        return this.submit(callable, Duration.ZERO, name, handler);
-    }
-
-    /**
-     * Submits a callable task for execution after the specified delay with the given name and exception handler.
-     *
-     * @param callable the callable to execute
-     * @param delay    the delay before execution
-     * @param name     the name of the task
-     * @param handler  the exception handler; its return value is used as the result of {@link Callback#call()}
-     * @param <V>      the return type
-     * @return a handle to the scheduled callback
-     */
-    <V> Callback<V> submit(final Callable<V> callable, final Duration delay, final String name, final Function<ExecutionException,V> handler);
-
-
+    void interruptTaskIfRunning(@NonNull FocessTask task);
 }

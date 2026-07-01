@@ -1,5 +1,8 @@
 package top.focess.scheduler;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -9,6 +12,11 @@ import java.util.function.Consumer;
 /**
  * A handle to a scheduled task, providing methods to query execution state,
  * wait for completion, and request cancellation.
+ * <p>
+ * Note: Task does not extend {@link java.util.concurrent.Future} directly to avoid
+ * generic type conflicts with {@link Callback}. Instead, {@link Callback} extends
+ * both Task and {@code Future<V>}. Task provides cancel/isDone/isCancelled methods
+ * that are semantically identical to Future's.
  */
 public interface Task {
 
@@ -18,8 +26,7 @@ public interface Task {
      * When {@code mayInterruptIfRunning} is {@code true} and the task is currently running,
      * the executing thread is interrupted. Cancellation is <em>cooperative</em>: a blocking
      * call such as {@link Thread#sleep} throws {@link InterruptedException}, but a task that
-     * swallows the interrupt without reacting to it will continue to completion. The executing
-     * thread is never forcibly stopped and is reused for later tasks.
+     * swallows the interrupt without reacting to it will continue to completion.
      *
      * @param mayInterruptIfRunning {@code true} to interrupt the running task's thread
      * @return {@code true} if the task was cancelled, {@code false} if it was already
@@ -38,6 +45,20 @@ public interface Task {
     }
 
     /**
+     * Returns whether this task has finished execution.
+     *
+     * @return {@code true} if the task is done, {@code false} otherwise
+     */
+    boolean isDone();
+
+    /**
+     * Returns whether this task has been cancelled.
+     *
+     * @return {@code true} if the task is cancelled, {@code false} otherwise
+     */
+    boolean isCancelled();
+
+    /**
      * Returns whether this task is currently executing.
      *
      * @return {@code true} if the task is running, {@code false} otherwise
@@ -49,6 +70,7 @@ public interface Task {
      *
      * @return the owning scheduler
      */
+    @NonNull
     Scheduler getScheduler();
 
     /**
@@ -56,6 +78,7 @@ public interface Task {
      *
      * @return the task name
      */
+    @NonNull
     String getName();
 
     /**
@@ -64,20 +87,6 @@ public interface Task {
      * @return {@code true} if the task is periodic, {@code false} otherwise
      */
     boolean isPeriod();
-
-    /**
-     * Returns whether this task has finished execution.
-     *
-     * @return {@code true} if the task is finished, {@code false} otherwise
-     */
-    boolean isFinished();
-
-    /**
-     * Returns whether this task has been cancelled.
-     *
-     * @return {@code true} if the task is cancelled, {@code false} otherwise
-     */
-    boolean isCancelled();
 
     /**
      * Waits until this task finishes, is cancelled, or throws an exception.
@@ -98,7 +107,7 @@ public interface Task {
      * @throws TimeoutException      if the wait timed out
      * @throws CancellationException if the task was cancelled
      */
-    void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException;
+    void join(long timeout, @NonNull TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException;
 
     /**
      * Sets the exception handler for this task.
@@ -108,6 +117,20 @@ public interface Task {
      *
      * @param handler the exception handler, or {@code null} to clear
      */
-    void setExceptionHandler(Consumer<ExecutionException> handler);
+    void setExceptionHandler(@Nullable Consumer<ExecutionException> handler);
 
+    /**
+     * Register a callback to be invoked when this task completes
+     * (finishes, is cancelled, or throws an exception).
+     * If the task is already done, the listener is called immediately.
+     * <p>
+     * Callers should wrap the listener in a fire-once guard to avoid
+     * double-invocation in a race between {@code onComplete} and task completion.
+     * <p>
+     * Note: For periodic tasks, listeners are one-shot — they fire on the
+     * first completion only and are cleared on re-dispatch via {@code clear()}.
+     *
+     * @param listener the callback to invoke on completion
+     */
+    void onComplete(@NonNull Runnable listener);
 }

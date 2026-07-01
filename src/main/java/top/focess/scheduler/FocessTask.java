@@ -1,32 +1,43 @@
 package top.focess.scheduler;
 
-import com.google.common.collect.Lists;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * The default implementation of {@link ITask}.
+ * CAS-based task implementation with lock-free state transitions.
  * <p>
- * Manages task lifecycle through a state machine:
- * {@code PENDING → RUNNING → FINISHED} (or {@code CANCELLED} at any point).
- * Period tasks reset to {@code PENDING} after each execution.
+ * State machine: PENDING → RUNNING → FINISHED (or CANCELLED at any point).
+ * Period tasks reset to PENDING after each execution via {@link #clear()}.
  * <p>
- * Tasks are ordered by their scheduled execution time via {@link Comparable}.
+ * Tasks are ordered by their scheduled execution time via {@link Comparable}
+ * and implement {@link Delayed} for use with {@link java.util.concurrent.DelayQueue}.
+ * <p>
+ * The task state and completion latch are bundled into a single
+ * {@link StateAndLatch} object so that all state transitions are atomic
+ * with respect to the latch. This prevents orphaned latches that could
+ * cause {@link #join()} to block forever under concurrent cancel/clear
+ * interleavings on periodic tasks.
  */
-public class FocessTask implements ITask, Comparable<FocessTask> {
+public class FocessTask implements TaskInternal, Delayed {
 
     /**
      * The lifecycle states of a task.
      */
-    private enum TaskState {
+    enum TaskState {
         /** The task is waiting to be executed. */
         PENDING,
         /** The task is currently executing. */
@@ -37,147 +48,151 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
         CANCELLED
     }
 
+    /**
+         * Compound atomic value bundling the task state with its completion latch.
+         * Because both must transition together (e.g. FINISHED→countDown, CANCELLED→countDown,
+         * clear()→new latch + PENDING), a single CAS on this object makes the update atomic.
+         */
+        record StateAndLatch(TaskState state, CountDownLatch latch) {
+    }
+
     private final Runnable runnable;
-    private final AScheduler scheduler;
+    private final Scheduler scheduler;
     private final String name;
-    private volatile long time;
-    private TaskState state = TaskState.PENDING;
+    private final Duration period;
+    private final AtomicReference<StateAndLatch> stateRef =
+            new AtomicReference<>(new StateAndLatch(TaskState.PENDING, new CountDownLatch(1)));
+    private final AtomicLong scheduledTime = new AtomicLong();
+    private final CopyOnWriteArrayList<Runnable> completionListeners = new CopyOnWriteArrayList<>();
 
-    protected ExecutionException exception;
-    private Duration period;
-    private Consumer<ExecutionException> handler;
-    private List<TaskPool> taskPools;
+    protected volatile ExecutionException exception;
+    protected volatile Consumer<ExecutionException> handler;
 
-    private final Object TASK_POOL_LOCK =  new Object();
-
-    FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler, final String name) {
-        this.runnable = runnable;
-        this.scheduler = scheduler;
-        this.name = scheduler.getName() + "-" + name;
+    FocessTask(@Nullable Runnable runnable, @NonNull Scheduler scheduler) {
+        this(runnable, null, scheduler, UUID.randomUUID().toString().substring(0, 8), null);
     }
 
-    FocessTask(@Nullable final Runnable runnable, @NotNull final AScheduler scheduler) {
-        this(runnable,scheduler, UUID.randomUUID().toString().substring(0, 8));
+    FocessTask(@Nullable Runnable runnable, @NonNull Scheduler scheduler, @NonNull String name) {
+        this(runnable, null, scheduler, name, null);
     }
 
-    FocessTask(final Runnable runnable, final AScheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
-        this(runnable, scheduler, name);
-        this.handler = handler;
+    FocessTask(@Nullable Runnable runnable, @NonNull Scheduler scheduler, @NonNull String name,
+               @Nullable Consumer<ExecutionException> handler) {
+        this(runnable, null, scheduler, name, handler);
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler) {
-        this(runnable, scheduler);
-        this.period = period;
+    FocessTask(@Nullable Runnable runnable, @Nullable Duration period, @NonNull Scheduler scheduler) {
+        this(runnable, period, scheduler, UUID.randomUUID().toString().substring(0, 8), null);
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler, final String name) {
+    FocessTask(@Nullable Runnable runnable, @Nullable Duration period, @NonNull Scheduler scheduler,
+               @NonNull String name) {
         this(runnable, period, scheduler, name, null);
     }
 
-    FocessTask(final Runnable runnable, final Duration period, final AScheduler scheduler, final String name, final Consumer<ExecutionException> handler) {
-        this(runnable, scheduler, name);
+    FocessTask(@Nullable Runnable runnable, @Nullable Duration period, @NonNull Scheduler scheduler,
+               @NonNull String name, @Nullable Consumer<ExecutionException> handler) {
+        this.runnable = runnable;
         this.period = period;
+        this.scheduler = scheduler;
+        this.name = scheduler.getName() + "-" + name;
         this.handler = handler;
     }
 
+    // --- State transitions ---
+
+    TaskState getState() {
+        return stateRef.get().state;
+    }
+
+    void setScheduledTime(long nanoTime) {
+        this.scheduledTime.set(nanoTime);
+    }
+
+    long getScheduledTime() {
+        return scheduledTime.get();
+    }
+
     @Override
-    public synchronized void clear() {
-        // Only periodic tasks are reusable; cancellation and terminal finish stay terminal.
-        if (this.period != null && this.state == TaskState.FINISHED) {
-            this.state = TaskState.PENDING;
+    public boolean startRun() {
+        while (true) {
+            StateAndLatch current = stateRef.get();
+            if (current.state != TaskState.PENDING) return false;
+            if (stateRef.compareAndSet(current, new StateAndLatch(TaskState.RUNNING, current.latch))) {
+                return true;
+            }
+            // CAS failed — retry
         }
-        // exception is intentionally preserved across ticks for period tasks
-    }
-
-    void setTime(final long time) {
-        this.time = time;
-    }
-
-    long getTime() {
-        return time;
-    }
-
-    @Override
-    public int compareTo(@NotNull final FocessTask o) {
-        return Long.compare(this.time, o.time);
-    }
-
-    @Override
-    public synchronized void startRun() {
-        // must be pending here
-        this.state = TaskState.RUNNING;
     }
 
     @Override
     public void endRun() {
-        synchronized (this) {
-            if (this.state == TaskState.RUNNING) {
-                this.state = TaskState.FINISHED;
+        while (true) {
+            StateAndLatch current = stateRef.get();
+            if (current.state != TaskState.RUNNING) return;
+            if (stateRef.compareAndSet(current, new StateAndLatch(TaskState.FINISHED, current.latch))) {
+                current.latch.countDown();
+                fireCompletionListeners();
+                return;
             }
-            this.notifyAll();
+            // CAS failed — retry
         }
-        synchronized (TASK_POOL_LOCK) {
-            if (this.taskPools != null) {
-                for (final TaskPool taskPool : this.taskPools) {
-                    taskPool.removeTask(this);
-                    taskPool.finishTask(this);
+    }
+
+    @Override
+    public void clear() {
+        // Only periodic tasks are reusable; reset FINISHED → PENDING
+        if (this.period != null) {
+            while (true) {
+                StateAndLatch current = stateRef.get();
+                if (current.state != TaskState.FINISHED) return;
+                // Atomically transition to PENDING with a fresh latch
+                if (stateRef.compareAndSet(current,
+                        new StateAndLatch(TaskState.PENDING, new CountDownLatch(1)))) {
+                    this.exception = null;
+                    completionListeners.clear();
+                    return;
                 }
+                // CAS failed — retry
             }
         }
     }
 
+    // --- Task interface ---
+
     @Override
-    public synchronized void setException(final ExecutionException e) {
-        if (this.handler != null)
-            try {
-                this.handler.accept(e);
-            } catch (final Throwable ignored) {
-                this.exception = e;
+    public boolean cancel(boolean mayInterruptIfRunning) {
+        while (true) {
+            StateAndLatch current = stateRef.get();
+            if (current.state == TaskState.CANCELLED || current.state == TaskState.FINISHED)
+                return false;
+            if (current.state == TaskState.RUNNING && !mayInterruptIfRunning)
+                return false;
+            StateAndLatch next = new StateAndLatch(TaskState.CANCELLED, current.latch);
+            if (stateRef.compareAndSet(current, next)) {
+                current.latch.countDown();
+                fireCompletionListeners();
+                if (current.state == TaskState.RUNNING)
+                    scheduler.interruptTaskIfRunning(this);
+                return true;
             }
-        else this.exception = e;
-    }
-
-    @Override
-    public void addTaskPool(final TaskPool taskPool) {
-        synchronized (TASK_POOL_LOCK) {
-            if (this.taskPools == null)
-                this.taskPools = Lists.newCopyOnWriteArrayList();
-            this.taskPools.add(taskPool);
+            // CAS failed — retry
         }
     }
 
     @Override
-    public void removeTaskPool(final TaskPool taskPool) {
-        synchronized (TASK_POOL_LOCK) {
-            if (this.taskPools != null)
-                this.taskPools.remove(taskPool);
-        }
+    public boolean isRunning() {
+        return stateRef.get().state == TaskState.RUNNING;
     }
 
     @Override
-    public synchronized boolean cancel(final boolean mayInterruptIfRunning) {
-        if (this.state == TaskState.CANCELLED || this.state == TaskState.FINISHED)
-            return false;
-        if (this.state == TaskState.RUNNING && !mayInterruptIfRunning)
-            return false;
-        if (mayInterruptIfRunning && this.state == TaskState.RUNNING)
-            scheduler.interruptTaskIfRunning(this);
-        this.state = TaskState.CANCELLED;
-        this.notifyAll();
-        return true;
-    }
-
-    @Override
-    public synchronized boolean isRunning() {
-        return this.state == TaskState.RUNNING;
-    }
-
-    @Override
+    @NonNull
     public Scheduler getScheduler() {
         return this.scheduler;
     }
 
     @Override
+    @NonNull
     public String getName() {
         return this.name;
     }
@@ -188,60 +203,62 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     }
 
     @Override
-    public synchronized boolean isFinished() {
-        return this.period == null && this.state == TaskState.FINISHED;
+    public boolean isDone() {
+        TaskState s = stateRef.get().state;
+        return s == TaskState.FINISHED || s == TaskState.CANCELLED;
     }
 
     @Override
-    public synchronized boolean isCancelled() {
-        return this.state == TaskState.CANCELLED;
+    public boolean isCancelled() {
+        return stateRef.get().state == TaskState.CANCELLED;
     }
 
     @Override
-    public synchronized void join() throws InterruptedException, CancellationException, ExecutionException {
-        while (true) {
-            if (this.exception != null)
-                throw this.exception;
-            if (this.isFinished())
-                return;
-            if (this.isCancelled())
-                throw new CancellationException("Task is cancelled");
-            this.wait();
-        }
+    public void join() throws ExecutionException, InterruptedException, CancellationException {
+        stateRef.get().latch.await();
+        if (exception != null) throw exception;
+        if (isCancelled()) throw new CancellationException("Task is cancelled");
     }
 
     @Override
-    public synchronized void join(final long timeout, final TimeUnit unit) throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
-        final long millisTimeout = unit.toMillis(timeout);
-        final long now = System.currentTimeMillis();
-        final long deadline = (millisTimeout < 0 || millisTimeout > Long.MAX_VALUE - now)
-            ? Long.MAX_VALUE
-            : now + millisTimeout;
-        // loop to guard against spurious wakeups and to honor the remaining timeout
-        while (true) {
-            if (this.exception != null)
-                throw this.exception;
-            if (this.isFinished())
-                return;
-            if (this.isCancelled())
-                throw new CancellationException("Task is cancelled");
-            final long remaining = deadline - System.currentTimeMillis();
-            if (remaining <= 0)
-                throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
-            this.wait(remaining);
-        }
+    public void join(long timeout, @NonNull TimeUnit unit)
+            throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
+        if (!stateRef.get().latch.await(timeout, unit))
+            throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
+        if (exception != null) throw exception;
+        if (isCancelled()) throw new CancellationException("Task is cancelled");
     }
 
     @Override
-    public synchronized void setExceptionHandler(Consumer<ExecutionException> handler) {
+    public void setExceptionHandler(@Nullable Consumer<ExecutionException> handler) {
         this.handler = handler;
     }
+
+    @Override
+    public void onComplete(@NonNull Runnable listener) {
+        // Fire-once guard: prevents double-invocation in the race between
+        // adding the listener and the task completing concurrently.
+        // Note: For periodic tasks, listeners are one-shot — they fire on the
+        // first completion only and are cleared on re-dispatch via clear().
+        AtomicBoolean fired = new AtomicBoolean(false);
+        Runnable guarded = () -> {
+            if (fired.compareAndSet(false, true)) {
+                listener.run();
+            }
+        };
+        completionListeners.add(guarded);
+        if (isDone()) {
+            guarded.run();
+        }
+    }
+
+    // --- TaskInternal interface ---
 
     @Override
     public void run() throws ExecutionException {
         try {
             this.runnable.run();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             throw new ExecutionException(e);
         }
     }
@@ -252,8 +269,52 @@ public class FocessTask implements ITask, Comparable<FocessTask> {
     }
 
     @Override
+    public void setException(@NonNull ExecutionException e) {
+        Consumer<ExecutionException> h = this.handler;
+        if (h != null) {
+            try {
+                h.accept(e);
+            } catch (Throwable ignored) {
+                this.exception = e;
+            }
+        } else {
+            this.exception = e;
+        }
+    }
+
+    @Override
+    public ExecutionException getException() {
+        return this.exception;
+    }
+
+    // --- Delayed interface ---
+
+    @Override
+    public long getDelay(@NonNull TimeUnit unit) {
+        return unit.convert(scheduledTime.get() - System.nanoTime(), TimeUnit.NANOSECONDS);
+    }
+
+    @Override
+    public int compareTo(@NonNull Delayed o) {
+        if (o instanceof FocessTask)
+            return Long.compare(this.scheduledTime.get(), ((FocessTask) o).scheduledTime.get());
+        return Long.compare(this.getDelay(TimeUnit.NANOSECONDS), o.getDelay(TimeUnit.NANOSECONDS));
+    }
+
+    // --- Completion listeners ---
+
+    private void fireCompletionListeners() {
+        for (Runnable listener : completionListeners) {
+            try {
+                listener.run();
+            } catch (Throwable ignored) {
+                // don't let one bad listener break others
+            }
+        }
+    }
+
+    @Override
     public String toString() {
         return this.getName();
     }
-
 }

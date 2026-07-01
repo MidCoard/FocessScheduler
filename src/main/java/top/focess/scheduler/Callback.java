@@ -1,9 +1,14 @@
 package top.focess.scheduler;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import top.focess.scheduler.exceptions.TaskNotFinishedException;
 
-import java.util.concurrent.*;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 /**
@@ -17,55 +22,35 @@ import java.util.function.Function;
 public interface Callback<V> extends Task, Future<V> {
 
     /**
-     * Returns the computed result, blocking until the task completes if necessary.
+     * Returns the computed result without blocking.
      *
      * @return the computed value
      * @throws CancellationException    if the task was cancelled
      * @throws TaskNotFinishedException if the task has not yet finished
      * @throws ExecutionException       if the task threw an exception
      */
-    V call() throws ExecutionException, CancellationException, TaskNotFinishedException;
+    V getNow() throws ExecutionException, CancellationException, TaskNotFinishedException;
 
     /**
      * Waits for the task to finish, then returns the computed result.
+     * <p>
+     * This is the {@link Future#get()} implementation.
      *
      * @return the computed value
      * @throws InterruptedException if the current thread was interrupted while waiting
      * @throws ExecutionException   if the task threw an exception
-     * @see #join()
-     */
-    default V waitCall() throws InterruptedException, ExecutionException {
-        this.join();
-        return this.call();
-    }
-
-    /**
-     * Returns {@code true} if the task has finished.
-     *
-     * @return {@code true} if the task is finished, {@code false} otherwise
-     * @see #isFinished()
-     */
-    @Override
-    default boolean isDone() {
-        return this.isFinished();
-    }
-
-    /**
-     * Waits for the task to finish if necessary, then returns the computed result.
-     *
-     * @return the computed value
-     * @throws InterruptedException if the current thread was interrupted while waiting
-     * @throws ExecutionException   if the task threw an exception
-     * @see #waitCall()
      * @see #join()
      */
     @Override
     default V get() throws InterruptedException, ExecutionException {
-        return this.waitCall();
+        join();
+        return getNow();
     }
 
     /**
-     * Waits for at most the given time for the task to finish, then returns the computed result.
+     * Waits at most the given time for the task to finish, then returns the computed result.
+     * <p>
+     * This is the {@link Future#get(long, TimeUnit)} implementation.
      *
      * @param timeout the maximum time to wait
      * @param unit    the time unit of the timeout argument
@@ -77,19 +62,19 @@ public interface Callback<V> extends Task, Future<V> {
      * @see #join(long, TimeUnit)
      */
     @Override
-    default V get(long timeout, @NotNull TimeUnit unit)
+    default V get(long timeout, @NonNull TimeUnit unit)
             throws InterruptedException, ExecutionException, TimeoutException, CancellationException {
-        this.join(timeout, unit);
-        return this.call();
+        join(timeout, unit);
+        return getNow();
     }
 
     /**
      * Sets the exception handler for this callback.
      * <p>
      * When the task throws an exception, the handler is invoked and its return value
-     * is used as the result of {@link #call()}, effectively suppressing the exception.
+     * is used as the result of {@link #getNow()}, effectively suppressing the exception.
      *
      * @param handler the exception handler
      */
-    void setExceptionHandler(Function<ExecutionException,V> handler);
+    void setExceptionHandler(@NonNull Function<ExecutionException, V> handler);
 }

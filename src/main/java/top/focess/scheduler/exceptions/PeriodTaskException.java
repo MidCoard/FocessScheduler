@@ -1,6 +1,6 @@
 package top.focess.scheduler.exceptions;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import top.focess.scheduler.Task;
 
 /**
@@ -16,7 +16,7 @@ public class PeriodTaskException extends IllegalStateException {
      *
      * @param task the period task that was rejected
      */
-    public PeriodTaskException(@NotNull final Task task) {
+    public PeriodTaskException(@NonNull final Task task) {
         super("Period task " + task.getName() + " cannot be added to a task pool. Task pools are for non-period tasks only.");
     }
 }

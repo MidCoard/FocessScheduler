@@ -1,78 +1,115 @@
 package top.focess.scheduler;
 
-import com.google.common.collect.Sets;
+import org.jspecify.annotations.NonNull;
 import top.focess.scheduler.exceptions.PeriodTaskException;
 
-import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Abstract base class for task pools that group tasks together.
+ * A composable task pool that groups tasks and completes based on a
+ * pluggable {@link CompletionStrategy}.
  * <p>
- * Task pools are designed for one-off (non-period) tasks. When the pool's completion
- * condition is met, an optional final callback is scheduled.
+ * Tasks don't know about pools. Pools observe task completion through
+ * the {@link Task#onComplete(Runnable)} listener, using a strategy to
+ * determine when the pool is complete.
  * <p>
  * <b>Contract:</b> Only non-period tasks can be added; period tasks are rejected with
  * {@link PeriodTaskException}, because they cycle indefinitely and never produce
  * the terminal completion event a pool depends on.
  */
-public abstract class TaskPool {
+public class TaskPool {
 
-	protected final Scheduler scheduler;
-	protected final Runnable runnable;
+    /**
+     * Strategy that determines when a pool is "complete".
+     */
+    @FunctionalInterface
+    public interface CompletionStrategy {
+        /**
+         * Called when a task in the pool finishes.
+         *
+         * @param pool      the pool
+         * @param task      the task that finished
+         * @param remaining the number of tasks still pending in the pool
+         * @return true if the pool should be marked complete
+         */
+        boolean onComplete(TaskPool pool, Task task, int remaining);
+    }
 
-	protected final Set<Task> tasks = Sets.newHashSet();
+    /** All tasks must complete. */
+    public static final CompletionStrategy ALL = (pool, task, remaining) -> remaining == 0;
+    /** Any task completing triggers pool completion. */
+    public static final CompletionStrategy ANY = (pool, task, remaining) -> true;
 
-	protected volatile boolean isFinished;
-	protected Task task;
+    private final Scheduler scheduler;
+    private final CompletionStrategy strategy;
+    private final Runnable callback;
+    private final AtomicInteger remaining = new AtomicInteger(0);
+    private final AtomicBoolean finished = new AtomicBoolean(false);
+    private final CountDownLatch completionLatch = new CountDownLatch(1);
+    private volatile Task callbackTask;
 
-	public TaskPool(final Scheduler scheduler, final Runnable runnable) {
-		this.scheduler = scheduler;
-		this.runnable = runnable;
-	}
+    public TaskPool(Scheduler scheduler, CompletionStrategy strategy, Runnable callback) {
+        this.scheduler = scheduler;
+        this.strategy = strategy;
+        this.callback = callback;
+    }
 
-	/**
-	 * Add a non-period task to this pool.
-	 *
-	 * @param task the task to add (must be non-period)
-	 * @throws PeriodTaskException if the task is a period task
-	 */
-	public synchronized void addTask(final Task task) {
-		if (task.isPeriod()) {
-			throw new PeriodTaskException(task);
-		}
-		final ITask iTask = (ITask) task;
-		iTask.addTaskPool(this);
-		this.tasks.add(task);
-	}
+    /**
+     * Add a non-periodic task to this pool.
+     *
+     * @param task the task to add (must be non-period)
+     * @throws PeriodTaskException if the task is a period task
+     */
+    public void addTask(@NonNull Task task) {
+        if (task.isPeriod()) throw new PeriodTaskException(task);
+        remaining.incrementAndGet();
+        // Use AtomicBoolean to ensure onTaskComplete fires exactly once
+        // (onComplete may fire the listener twice in a race)
+        AtomicBoolean fired = new AtomicBoolean(false);
+        task.onComplete(() -> {
+            if (fired.compareAndSet(false, true)) {
+                onTaskComplete(task);
+            }
+        });
+    }
 
-	public synchronized void join() throws ExecutionException, InterruptedException {
-		while (!this.isFinished)
-			this.wait();
-		if (this.task != null)
-			this.task.join();
-	}
+    private void onTaskComplete(Task task) {
+        int left = remaining.decrementAndGet();
+        if (strategy.onComplete(this, task, left)) {
+            markFinished();
+        }
+    }
 
-	public synchronized void removeTask(final Task task) {
-		final ITask iTask = (ITask) task;
-		iTask.removeTaskPool(this);
-		this.tasks.remove(task);
-	}
+    /**
+     * Mark this pool as finished and wake up any threads waiting in {@link #join()}.
+     */
+    protected void markFinished() {
+        if (finished.compareAndSet(false, true)) {
+            if (callback != null) callbackTask = scheduler.schedule(callback);
+            completionLatch.countDown();
+        }
+    }
 
-	/**
-	 * Mark this pool as finished and wake up any threads waiting in {@link #join()}.
-	 * This is called when the pool's completion condition is met and the final callback (if any) has been scheduled.
-	 */
-	protected synchronized void markFinished() {
-		this.isFinished = true;
-		this.notifyAll();
-	}
+    /**
+     * Wait for the pool's completion condition, then for the callback task if any.
+     *
+     * @throws ExecutionException   if the callback task threw an exception
+     * @throws InterruptedException if the current thread was interrupted while waiting
+     */
+    public void join() throws ExecutionException, InterruptedException {
+        completionLatch.await();
+        if (callbackTask != null) callbackTask.join();
+    }
 
-	/**
-	 * Called when a task in this pool finishes. Subclasses implement pool-specific
-	 * completion logic (e.g., "all tasks finished" vs "any task finished").
-	 *
-	 * @param task the task that has finished
-	 */
-	public abstract void finishTask(final Task task);
+    /**
+     * Whether the pool's completion condition has been met.
+     *
+     * @return {@code true} if finished, {@code false} otherwise
+     */
+    public boolean isFinished() {
+        return finished.get();
+    }
 }

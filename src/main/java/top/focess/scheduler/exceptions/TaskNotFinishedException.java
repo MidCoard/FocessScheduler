@@ -1,6 +1,6 @@
 package top.focess.scheduler.exceptions;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import top.focess.scheduler.Callback;
 
 /**
@@ -14,7 +14,7 @@ public class TaskNotFinishedException extends IllegalStateException {
      * @param callback the callback that has not finished
      * @param <V>      the result type of the callback
      */
-    public <V> TaskNotFinishedException(@NotNull final Callback<V> callback) {
+    public <V> TaskNotFinishedException(@NonNull final Callback<V> callback) {
         super("Task " + callback.getName() + " is not finished.");
     }
 }

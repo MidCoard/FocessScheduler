@@ -1,6 +1,6 @@
 package top.focess.scheduler.exceptions;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import top.focess.scheduler.Scheduler;
 
 /**
@@ -13,7 +13,7 @@ public class SchedulerClosedException extends IllegalStateException {
      *
      * @param scheduler the scheduler that has been shut down
      */
-    public SchedulerClosedException(@NotNull final Scheduler scheduler) {
+    public SchedulerClosedException(@NonNull final Scheduler scheduler) {
         super("Scheduler " + scheduler.getName() + " is closed.");
     }
 }
