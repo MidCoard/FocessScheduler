@@ -141,8 +141,8 @@ public class PoolTaskExecutor implements TaskExecutor {
     }
 
     @Override
-    public boolean isIdle() {
-        return runningCount.get() == 0 && workQueue.isEmpty();
+    public boolean isTerminated() {
+        return shutdown.get() && allWorkers.isEmpty();
     }
 
     private void ensureWorkers() {

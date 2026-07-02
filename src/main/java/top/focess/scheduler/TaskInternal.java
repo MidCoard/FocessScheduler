@@ -48,4 +48,11 @@ interface TaskInternal extends Task {
      * Get the exception produced by this task, or null.
      */
     ExecutionException getException();
+
+    /**
+     * Returns the {@link Runnable} representation of this task's payload.
+     * Used by {@link AbstractScheduler#shutdownNow()} to satisfy the
+     * {@code ExecutorService} contract.
+     */
+    Runnable asRunnable();
 }

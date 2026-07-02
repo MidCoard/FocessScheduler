@@ -125,7 +125,7 @@ public class FocessCallback<V> extends FocessTask implements Callback<V> {
     }
 
     @Override
-    Runnable asRunnable() {
+    public Runnable asRunnable() {
         // Wrap the Callable as a Runnable so the caller of shutdownNow()
         // can re-execute it. The return value of the Callable is discarded,
         // matching the ExecutorService contract for List<Runnable>.

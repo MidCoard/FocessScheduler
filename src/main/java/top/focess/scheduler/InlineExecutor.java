@@ -74,7 +74,7 @@ public class InlineExecutor implements TaskExecutor {
     }
 
     @Override
-    public synchronized boolean isIdle() {
-        return currentTask == null;
+    public synchronized boolean isTerminated() {
+        return shutdown && currentTask == null;
     }
 }

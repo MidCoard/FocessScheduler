@@ -48,9 +48,10 @@ public interface TaskExecutor {
     boolean isShutdown();
 
     /**
-     * Whether the executor has no running tasks.
+     * Whether the executor has fully terminated — shut down and
+     * no running tasks remain.
      *
-     * @return {@code true} if idle, {@code false} otherwise
+     * @return {@code true} if terminated, {@code false} otherwise
      */
-    boolean isIdle();
+    boolean isTerminated();
 }

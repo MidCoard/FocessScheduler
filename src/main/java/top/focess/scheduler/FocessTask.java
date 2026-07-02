@@ -288,7 +288,7 @@ public class FocessTask implements TaskInternal, Delayed {
     @Override
     public void run() throws ExecutionException {
         try {
-            this.runnable.run();
+            if (this.runnable != null) this.runnable.run();
         } catch (Throwable e) {
             throw new ExecutionException(e);
         }
@@ -325,7 +325,8 @@ public class FocessTask implements TaskInternal, Delayed {
      * Used by {@link AbstractScheduler#shutdownNow()} to satisfy the
      * {@code ExecutorService} contract.
      */
-    Runnable asRunnable() {
+    @Override
+    public Runnable asRunnable() {
         return this.runnable;
     }
 

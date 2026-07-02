@@ -230,15 +230,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
 
     @Override
     public boolean isTerminated() {
-        // The scheduler is truly terminated only when:
-        // 1. The dispatcher thread has fully exited (no more dispatching),
-        // 2. The executor has no running tasks left.
-        // Checking just isShutdown() + isIdle() is insufficient because
-        // there's a window where the dispatcher is shut down but still
-        // mid-dispatch (calling onTaskReady → executor.execute), and
-        // the executor hasn't picked up the task yet so isIdle() returns
-        // true even though a task is about to start running.
-        return dispatcher.isTerminated() && executor.isIdle();
+        return dispatcher.isTerminated() && executor.isTerminated();
     }
 
     @Override

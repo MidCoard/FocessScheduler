@@ -90,16 +90,15 @@ class SchedulerLifecycleTest {
     // ---- 6. shutdownNow() cancels queued tasks, running unaffected ----
 
     @Test
-    @DisplayName("shutdownNow() cancels pending tasks but does not interrupt running tasks")
+    @DisplayName("shutdownNow() cancels queued tasks and interrupts running tasks")
     void shutdownNowCancelsQueuedTasks() throws Exception {
         ThreadPoolScheduler scheduler = new ThreadPoolScheduler(1, false, "cancel-pending");
-        AtomicBoolean runningCompleted = new AtomicBoolean(false);
+        AtomicBoolean runningSawInterrupt = new AtomicBoolean(false);
         AtomicBoolean pendingRan = new AtomicBoolean(false);
 
         // Fill the single worker with a long task
         Task running = scheduler.schedule(() -> {
-            try { Thread.sleep(2000); runningCompleted.set(true); }
-            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            try { Thread.sleep(2000); } catch (InterruptedException e) { runningSawInterrupt.set(true); }
         });
         // Queue a second task behind it
         Task pending = scheduler.schedule(() -> pendingRan.set(true), Duration.ZERO);
@@ -107,13 +106,11 @@ class SchedulerLifecycleTest {
         Thread.sleep(500);
         assertTrue(running.isRunning(), "first task should be running");
         scheduler.shutdownNow();
-        // The pending task should be cancelled now
+        // The running task should have been interrupted
         Thread.sleep(500);
-        // Wait for the running task to finish
-        running.join(5, TimeUnit.SECONDS);
-        assertTrue(runningCompleted.get(), "running task should complete");
-        // Pending task may or may not be cancelled depending on timing,
-        // but shutdownNow should have removed it from the dispatcher queue
+        assertTrue(runningSawInterrupt.get(), "running task should have been interrupted by shutdownNow");
+        // The pending task should be cancelled
+        assertTrue(pending.isCancelled() || !pendingRan.get(), "pending task should be cancelled or not have run");
     }
 
     // ---- 7. Scheduling after shutdown throws on both schedulers ----

@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
  * so that the compound {@code toArray + clear} in {@code shutdownNow} is atomic
  * with respect to {@code dispatch}'s {@code add}. The dispatcher thread's
  * {@code poll()} is <em>not</em> locked — the race with {@code shutdownNow} is
- * harmless because {@code haltPending} is set before clearing the queue, so any
+ * harmless because {@code halt} is set before clearing the queue, so any
  * task the dispatcher polls after that point is simply cancelled (a task cancelled
  * twice is a no-op).
  */
@@ -28,10 +28,10 @@ public class TimeDispatcher implements Dispatcher {
     private final DelayQueue<FocessTask> queue = new DelayQueue<>();
     private volatile AbstractScheduler scheduler;
     private final Thread thread;
-    /** Whether the dispatcher has been shut down. Guarded by {@code this}. */
-    private boolean shutdown = false;
+    /** Whether the dispatcher has been shut down. */
+    private volatile boolean shutdown = false;
     /** Whether to halt pending tasks (shutdownNow) vs let them drain (shutdown). */
-    private volatile boolean haltPending = false;
+    private volatile boolean halt = false;
 
     public TimeDispatcher(String name, boolean isDaemon) {
         this.thread = new Thread(this::runLoop, name + "-dispatcher");
@@ -51,7 +51,7 @@ public class TimeDispatcher implements Dispatcher {
     }
 
     private void runLoop() {
-        while (!isShutdown() || (!haltPending && !queue.isEmpty())) {
+        while (!shutdown || (!halt && !queue.isEmpty())) {
             FocessTask task;
             try {
                 task = queue.poll(1, TimeUnit.SECONDS);
@@ -60,7 +60,7 @@ public class TimeDispatcher implements Dispatcher {
                 continue;
             }
             if (task == null) continue; // timeout — re-check flags
-            if (haltPending) {
+            if (halt) {
                 task.cancel(false);
                 continue;
             }
@@ -98,7 +98,7 @@ public class TimeDispatcher implements Dispatcher {
      * a task into the queue between the snapshot and the clear.
      * <p>
      * The dispatcher thread's {@code poll()} is not locked — if it polls a
-     * task after we set {@code haltPending}, it simply cancels that task
+     * task after we set {@code halt}, it simply cancels that task
      * (harmless double-cancel).
      *
      * @return the tasks that were awaiting execution
@@ -106,9 +106,9 @@ public class TimeDispatcher implements Dispatcher {
     @Override
     @NonNull
     public synchronized List<FocessTask> shutdownNow() {
-        if (shutdown) return List.of();
+        if (halt) return List.of();
         shutdown = true;
-        haltPending = true;
+        halt = true;
         // Drain all remaining tasks (including non-expired).
         // DelayQueue.drainTo only removes expired elements, so we
         // use toArray + clear to capture everything.
