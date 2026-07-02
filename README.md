@@ -136,7 +136,7 @@ TaskPool twoOfThree = new TaskPool(scheduler, (pool, task, remaining) -> remaini
 
 ## Architecture
 
-The 2.1.0 release introduces a **Dispatcher-Executor** architecture:
+The library uses a **Dispatcher-Executor** architecture:
 
 - **Dispatcher** decides *when* a task runs (e.g., `TimeDispatcher` uses a `DelayQueue` for time-based scheduling).
 - **TaskExecutor** decides *how* a task runs (e.g., `InlineExecutor` runs on the dispatcher thread; `PoolTaskExecutor` uses a worker pool).
@@ -149,6 +149,26 @@ This means you can plug in any Dispatcher with any Executor:
 Scheduler custom = new FocessScheduler(myDispatcher, myExecutor);
 ```
 
+### Threading Model
+
+| Component | Thread | Locking |
+|-----------|--------|---------|
+| `TimeDispatcher` | Single dispatcher thread polls `DelayQueue` | `synchronized(this)` on `dispatch`/`shutdown`/`shutdownNow`; `volatile boolean shutdown`/`halt` read without lock in run loop |
+| `InlineExecutor` | Runs tasks on the dispatcher thread | `synchronized(this)` on `execute`/`interruptTask`/`shutdown`/`isShutdown`/`isTerminated` |
+| `PoolTaskExecutor` | Worker threads poll `LinkedBlockingQueue` | `synchronized(worker)` on task assignment/interrupt; `AtomicBoolean` for `shutdown`/`halted`; `ConcurrentHashMap` for task→worker mapping |
+
+### Shutdown Lifecycle
+
+Shutdown follows the `ExecutorService` contract:
+
+- **`shutdown()`** — graceful: no new tasks are accepted, but already-submitted and running tasks complete normally.
+- **`shutdownNow()`** — immediate: no new tasks are accepted, queued tasks are drained and cancelled, running tasks are interrupted. Returns the list of tasks that were awaiting execution (as `Runnable` via `asRunnable()`).
+
+Both are **idempotent**: calling `shutdown()` or `shutdownNow()` multiple times has no additional effect. `shutdownNow()` after `shutdown()` still drains and cancels pending tasks.
+
+- **`isShutdown()`** — returns `true` after `shutdown()` or `shutdownNow()` has been called.
+- **`isTerminated()`** — returns `true` when the scheduler is shut down *and* all threads have fully exited (dispatcher thread dead, all workers removed).
+
 ### Key Design Decisions
 
 - **CAS-based state management** — `FocessTask` uses `AtomicReference<TaskState>` for lock-free state transitions (PENDING → RUNNING → FINISHED/CANCELLED).
@@ -156,6 +176,11 @@ Scheduler custom = new FocessScheduler(myDispatcher, myExecutor);
 - **`DelayQueue` for scheduling** — thread-safe priority queue replaces `PriorityQueue` + `synchronized`.
 - **`System.nanoTime()`** — used for all scheduling timing (not `currentTimeMillis`).
 - **No Guava dependency** — removed in 2.1.0.
+- **`synchronized(this)` over separate lock objects** — simpler locking model; monitor is the component itself.
+- **`volatile` flags for dispatcher loop** — `shutdown` and `halt` are read directly in the run loop without acquiring the lock, avoiding contention on every iteration.
+- **`halt` flag for shutdownNow idempotency** — `shutdownNow()` uses `if (halt) return List.of()` to guarantee the drain+clear executes exactly once, even under concurrent calls.
+- **Last-worker drain** — in `PoolTaskExecutor`, the final worker to exit drains any remaining tasks from the work queue, ensuring no task is orphaned even if shutdown occurs mid-execution.
+- **`asRunnable()` for shutdownNow return values** — `shutdownNow()` returns the original `Runnable` submitted by the caller (or a wrapper for `Callable` tasks), satisfying the `ExecutorService` contract.
 
 ## Cancellation
 
@@ -168,6 +193,11 @@ Interrupts are **isolated**: cancelling one task in a `ThreadPoolScheduler` only
 that task's worker thread. Other tasks are not affected, and the interrupt flag is cleared
 before the next task runs on the same worker.
 
+`cancel(false)` for a **running** task is best-effort and non-deterministic — the task
+may or may not observe the cancellation depending on timing. For deterministic cancellation
+of a running task, use `cancel(true)`. For periodic tasks, `cancel(true)` ensures the task
+is not rescheduled even if currently running.
+
 ## Migrating from 2.0.x
 
 | 2.0.x | 2.1.0 |
@@ -176,11 +206,12 @@ before the next task runs on the same worker.
 | `scheduler.run(runnable, duration)` | `scheduler.schedule(runnable, duration)` |
 | `scheduler.runTimer(runnable, delay, period)` | `scheduler.scheduleAtFixedRate(runnable, delay, period)` |
 | `scheduler.submit(callable)` | `scheduler.submit(callable, Duration.ZERO)` |
-| `scheduler.cancelAll()` | `scheduler.cancelPending()` |
+| `scheduler.cancelAll()` | `scheduler.shutdownNow()` |
 | `task.isFinished()` | `task.isDone()` |
 | `ITask` (internal) | `TaskInternal` (package-private) |
 | `AScheduler` | `AbstractScheduler` |
 | `ThreadPoolSchedulerThread` | `PoolTaskExecutor` |
+| `isIdle()` | `isTerminated()` |
 | Guava dependency | Removed |
 
 ## Migrating from 1.x
