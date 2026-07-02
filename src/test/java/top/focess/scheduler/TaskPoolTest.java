@@ -6,6 +6,11 @@ import top.focess.scheduler.exceptions.PeriodTaskException;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -178,5 +183,34 @@ class TaskPoolTest {
         ExecutionException ex = assertThrows(ExecutionException.class, () -> pool.join());
         assertEquals("callback-fail", ex.getCause().getMessage());
         scheduler.shutdown();
+    }
+
+    // ---- 10. Callback scheduling failure does not block join forever ----
+
+    @Test
+    @DisplayName("if the pool callback cannot be scheduled, join() unblocks and reports the rejection")
+    void callbackScheduleFailureDoesNotHangJoin() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("pool-cb-rejected");
+        AndTaskPool pool = new AndTaskPool(scheduler, () -> {});
+        Task task = scheduler.schedule(() -> {}, Duration.ofMillis(200));
+        pool.addTask(task);
+
+        scheduler.shutdown();
+        task.join(5, TimeUnit.SECONDS);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (!pool.isFinished() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertTrue(pool.isFinished(), "pool should be marked finished when the task completes");
+
+        ExecutorService joinExecutor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> joinFuture = joinExecutor.submit(() -> {
+                assertThrows(RejectedExecutionException.class, () -> pool.join());
+            });
+            joinFuture.get(1, TimeUnit.SECONDS);
+        } finally {
+            joinExecutor.shutdownNow();
+        }
     }
 }

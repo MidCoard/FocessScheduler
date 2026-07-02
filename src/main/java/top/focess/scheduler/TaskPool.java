@@ -50,6 +50,7 @@ public class TaskPool {
     private final AtomicBoolean finished = new AtomicBoolean(false);
     private final CountDownLatch completionLatch = new CountDownLatch(1);
     private volatile Task callbackTask;
+    private volatile RuntimeException callbackScheduleException;
 
     public TaskPool(Scheduler scheduler, CompletionStrategy strategy, Runnable callback) {
         this.scheduler = scheduler;
@@ -88,8 +89,13 @@ public class TaskPool {
      */
     protected void markFinished() {
         if (finished.compareAndSet(false, true)) {
-            if (callback != null) callbackTask = scheduler.schedule(callback);
-            completionLatch.countDown();
+            try {
+                if (callback != null) callbackTask = scheduler.schedule(callback);
+            } catch (RuntimeException e) {
+                callbackScheduleException = e;
+            } finally {
+                completionLatch.countDown();
+            }
         }
     }
 
@@ -101,6 +107,7 @@ public class TaskPool {
      */
     public void join() throws ExecutionException, InterruptedException {
         completionLatch.await();
+        if (callbackScheduleException != null) throw callbackScheduleException;
         if (callbackTask != null) callbackTask.join();
     }
 

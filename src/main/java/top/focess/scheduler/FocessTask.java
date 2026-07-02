@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -246,18 +247,31 @@ public class FocessTask implements TaskInternal, Delayed {
 
     @Override
     public void join() throws ExecutionException, InterruptedException, CancellationException {
-        stateRef.get().latch.await();
-        if (exception != null) throw exception;
-        if (isCancelled()) throw new CancellationException("Task is cancelled");
+        while (true) {
+            StateAndLatch current = stateRef.get();
+            current.latch.await();
+            if (isCancelled()) throw new CancellationException("Task is cancelled");
+            if (exception != null) throw exception;
+            if (!isPeriod()) return;
+            if (stateRef.get() == current) LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
     }
 
     @Override
     public void join(long timeout, @NonNull TimeUnit unit)
             throws InterruptedException, CancellationException, ExecutionException, TimeoutException {
-        if (!stateRef.get().latch.await(timeout, unit))
-            throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
-        if (exception != null) throw exception;
-        if (isCancelled()) throw new CancellationException("Task is cancelled");
+        long timeoutNanos = unit.toNanos(timeout);
+        long deadline = System.nanoTime() + timeoutNanos;
+        while (true) {
+            StateAndLatch current = stateRef.get();
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0 || !current.latch.await(remaining, TimeUnit.NANOSECONDS))
+                throw new TimeoutException("Task is not finished in " + timeout + " " + unit.name());
+            if (isCancelled()) throw new CancellationException("Task is cancelled");
+            if (exception != null) throw exception;
+            if (!isPeriod()) return;
+            if (stateRef.get() == current) LockSupport.parkNanos(Math.min(TimeUnit.MILLISECONDS.toNanos(1), Math.max(1, deadline - System.nanoTime())));
+        }
     }
 
     @Override

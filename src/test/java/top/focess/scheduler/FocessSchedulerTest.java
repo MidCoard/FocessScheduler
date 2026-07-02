@@ -6,9 +6,12 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.RejectedExecutionException;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -109,6 +112,58 @@ class FocessSchedulerTest {
         assertTrue(c >= 3, "should have run at least 3 times, got " + c);
         assertTrue(task.isPeriod(), "should be a period task");
         scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("scheduleAtFixedRate rejects zero and negative periods")
+    void scheduleAtFixedRateRejectsNonPositivePeriod() {
+        FocessScheduler scheduler = new FocessScheduler("period-validation");
+        Runnable noop = () -> {};
+        Duration later = Duration.ofDays(1);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> scheduler.scheduleAtFixedRate(noop, later, Duration.ZERO));
+            assertThrows(IllegalArgumentException.class,
+                    () -> scheduler.scheduleAtFixedRate(noop, later, Duration.ofNanos(-1)));
+            assertThrows(IllegalArgumentException.class,
+                    () -> scheduler.scheduleAtFixedRate(noop, later, Duration.ZERO, "zero-period"));
+            assertThrows(IllegalArgumentException.class,
+                    () -> scheduler.scheduleAtFixedRate(noop, later, Duration.ZERO, "zero-period-handler", ex -> {}));
+        } finally {
+            scheduler.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("scheduleAtFixedRate schedules from planned time instead of completion time")
+    void scheduleAtFixedRateUsesPlannedStartTime() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("fixed-rate-semantics");
+        AtomicInteger count = new AtomicInteger(0);
+        CountDownLatch secondRunStarted = new CountDownLatch(1);
+        List<Long> starts = new CopyOnWriteArrayList<>();
+        Task task = scheduler.scheduleAtFixedRate(() -> {
+            starts.add(System.nanoTime());
+            int run = count.incrementAndGet();
+            if (run == 1) {
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            } else if (run == 2) {
+                secondRunStarted.countDown();
+            }
+        }, Duration.ZERO, Duration.ofMillis(600), "fixed-rate");
+
+        try {
+            assertTrue(secondRunStarted.await(3, TimeUnit.SECONDS), "second run should start");
+            long gapMs = TimeUnit.NANOSECONDS.toMillis(starts.get(1) - starts.get(0));
+            assertTrue(gapMs < 1100,
+                    "fixed-rate should schedule from the planned time; actual gap was " + gapMs + "ms");
+        } finally {
+            task.cancel(true);
+            scheduler.shutdownNow();
+        }
     }
 
     // ---- 7. scheduleAtFixedRate with name ----

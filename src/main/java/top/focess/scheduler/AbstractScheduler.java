@@ -79,6 +79,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period) {
+        requirePositivePeriod(period);
         if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
@@ -89,6 +90,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name) {
+        requirePositivePeriod(period);
         if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this, name);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
@@ -99,6 +101,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     @Override
     @NonNull
     public Task scheduleAtFixedRate(@NonNull Runnable runnable, @NonNull Duration delay, @NonNull Duration period, @NonNull String name, @Nullable Consumer<ExecutionException> handler) {
+        requirePositivePeriod(period);
         if (dispatcher.isShutdown()) throw new RejectedExecutionException("Scheduler " + getName() + " is closed");
         FocessTask task = new FocessTask(runnable, period, this, name, handler);
         task.setScheduledTime(System.nanoTime() + delay.toNanos());
@@ -183,7 +186,7 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
     void onTaskComplete(FocessTask task) {
         if (task.isPeriod() && !task.isCancelled() && task.getException() == null) {
             task.clear();
-            task.setScheduledTime(System.nanoTime() + task.getPeriod().toNanos());
+            task.setScheduledTime(task.getScheduledTime() + task.getPeriod().toNanos());
             try {
                 dispatcher.dispatch(task);
             } catch (RejectedExecutionException e) {
@@ -193,6 +196,11 @@ public abstract class AbstractScheduler extends java.util.concurrent.AbstractExe
                 task.cancel(false);
             }
         }
+    }
+
+    private static void requirePositivePeriod(@NonNull Duration period) {
+        if (period.isZero() || period.isNegative())
+            throw new IllegalArgumentException("period must be greater than zero");
     }
 
     // --- ExecutorService ---

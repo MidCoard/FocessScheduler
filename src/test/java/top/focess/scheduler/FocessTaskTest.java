@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
@@ -134,6 +135,29 @@ class FocessTaskTest {
         scheduler.shutdown();
     }
 
+    @Test
+    @DisplayName("join() reports cancellation when a cancelled task throws while handling interruption")
+    void joinReportsCancellationWhenCancelledTaskThrows() throws Exception {
+        ThreadPoolScheduler scheduler = new ThreadPoolScheduler(1, false, "cancel-throws");
+        CountDownLatch started = new CountDownLatch(1);
+        Task task = scheduler.schedule(() -> {
+            started.countDown();
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException("thrown-after-cancel");
+            }
+        });
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS), "task should start");
+            assertTrue(task.cancel(true), "cancel(true) should succeed");
+            assertThrows(CancellationException.class, task::join);
+            assertThrows(CancellationException.class, () -> task.join(5, TimeUnit.SECONDS));
+        } finally {
+            scheduler.shutdownNow();
+        }
+    }
+
     // ---- 9. cancel(false) on RUNNING non-period task returns false ----
 
     @Test
@@ -176,9 +200,11 @@ class FocessTaskTest {
     @DisplayName("cancel() on a finished period task succeeds — period tasks are cancellable between cycles")
     void cancelFinishedPeriodTaskSucceeds() throws Exception {
         FocessScheduler scheduler = new FocessScheduler("cancel-period-finished");
-        Task task = scheduler.scheduleAtFixedRate(() -> {}, Duration.ZERO, Duration.ofMillis(100), "period");
-        Thread.sleep(300); // let a cycle complete
-        // The task may be in FINISHED state between cycles — cancel should work
+        CountDownLatch firstRunDone = new CountDownLatch(1);
+        Task task = scheduler.scheduleAtFixedRate(firstRunDone::countDown, Duration.ZERO, Duration.ofSeconds(5), "period");
+        assertTrue(firstRunDone.await(5, TimeUnit.SECONDS), "first run should complete");
+        Thread.sleep(50); // let the scheduler re-dispatch the next delayed cycle
+        // The task is between cycles, so cancel should work without interruption
         assertTrue(task.cancel(), "cancel on period task should succeed even when between cycles");
         assertTrue(task.isCancelled(), "period task should be cancelled");
         assertTrue(task.isDone(), "cancelled period task should be done");
@@ -228,6 +254,53 @@ class FocessTaskTest {
         task.cancel();
         assertTrue(task.isDone(), "after cancel, task should be done");
         scheduler.shutdown();
+    }
+
+    @Test
+    @DisplayName("join(timeout) on a healthy periodic task waits for terminal state, not one cycle")
+    void joinTimeoutOnHealthyPeriodTaskTimesOutAcrossCycles() {
+        FocessScheduler scheduler = new FocessScheduler("period-join-timeout");
+        Task task = scheduler.scheduleAtFixedRate(() -> {}, Duration.ZERO, Duration.ofMillis(50), "period-join");
+        try {
+            assertThrows(TimeoutException.class, () -> task.join(250, TimeUnit.MILLISECONDS));
+        } finally {
+            task.cancel(true);
+            scheduler.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("join() on a healthy periodic task returns only after cancellation")
+    void joinOnHealthyPeriodTaskWaitsUntilCancel() throws Exception {
+        FocessScheduler scheduler = new FocessScheduler("period-join-cancel");
+        Task task = scheduler.scheduleAtFixedRate(() -> {}, Duration.ZERO, Duration.ofMillis(50), "period-join-cancel");
+        AtomicBoolean joinReturned = new AtomicBoolean(false);
+        AtomicBoolean joinCancelled = new AtomicBoolean(false);
+        Thread joinThread = new Thread(() -> {
+            try {
+                task.join();
+                joinReturned.set(true);
+            } catch (CancellationException e) {
+                joinCancelled.set(true);
+            } catch (ExecutionException | InterruptedException e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        try {
+            joinThread.start();
+            Thread.sleep(250);
+            assertFalse(joinReturned.get(), "join should not return after ordinary periodic cycles");
+            assertFalse(joinCancelled.get(), "join should not finish before cancellation");
+            assertTrue(task.cancel(true), "cancel should terminate the periodic task");
+            joinThread.join(5_000);
+            assertFalse(joinThread.isAlive(), "join should finish after cancellation");
+            assertTrue(joinCancelled.get(), "join should report cancellation");
+        } finally {
+            task.cancel(true);
+            scheduler.shutdownNow();
+            joinThread.interrupt();
+        }
     }
 
     // ---- 11. Double cancel returns false ----

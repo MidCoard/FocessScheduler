@@ -3,5 +3,4 @@
 .mvn
 target
 focess-scheduler-*.jar
-src/test/java/*
 docs/
