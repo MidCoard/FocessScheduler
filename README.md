@@ -17,14 +17,14 @@ Both are fully composable: any `Dispatcher` works with any `TaskExecutor` throug
 <dependency>
     <groupId>top.focess</groupId>
     <artifactId>focess-scheduler</artifactId>
-    <version>2.1.0</version>
+    <version>2.1.1</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```gradle
-implementation 'top.focess:focess-scheduler:2.1.0'
+implementation 'top.focess:focess-scheduler:2.1.1'
 ```
 
 ## Usage

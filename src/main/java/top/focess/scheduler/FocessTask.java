@@ -270,7 +270,7 @@ public class FocessTask implements TaskInternal, Delayed {
             if (isCancelled()) throw new CancellationException("Task is cancelled");
             if (exception != null) throw exception;
             if (!isPeriod()) return;
-            if (stateRef.get() == current) LockSupport.parkNanos(Math.min(TimeUnit.MILLISECONDS.toNanos(1), Math.max(1, deadline - System.nanoTime())));
+            if (stateRef.get() == current) LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
         }
     }
 
