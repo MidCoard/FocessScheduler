@@ -2,15 +2,12 @@ package top.focess.scheduler;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import java.util.concurrent.RejectedExecutionException;
+
+import java.util.concurrent.*;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -18,15 +15,15 @@ import java.util.function.Function;
 /**
  * Abstract scheduler that wires {@link Dispatcher} and {@link TaskExecutor} together.
  * <p>
- * Extends {@link java.util.concurrent.AbstractExecutorService} to provide
- * full {@link java.util.concurrent.ExecutorService} compatibility while the
+ * Extends {@link AbstractExecutorService} to provide
+ * full {@link ExecutorService} compatibility while the
  * {@link Scheduler} interface defines the scheduling-specific API.
  * <p>
  * The Scheduler is the composition root — it mediates all communication between
  * the Dispatcher (which decides <em>when</em> a task runs) and the TaskExecutor
  * (which decides <em>how</em> a task runs).
  */
-public abstract class AbstractScheduler extends java.util.concurrent.AbstractExecutorService implements Scheduler {
+public abstract class AbstractScheduler extends AbstractExecutorService implements Scheduler {
 
     private final Dispatcher dispatcher;
     private final TaskExecutor executor;
